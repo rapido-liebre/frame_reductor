@@ -59,7 +59,8 @@ type AnalogScaleFactor struct {
 
 // DigitalMask reprezentuje maskę dla cyfrowych słów statusu.
 type DigitalMask struct {
-	Mask uint32 `json:"mask"` // Maska dla cyfrowych słów statusu
+	Mask1 uint16 `json:"mask1"` // Pierwsza maska cyfrowa (16 bitów)
+	Mask2 uint16 `json:"mask2"` // Druga maska cyfrowa (16 bitów)
 }
 
 // Definicje stałych dla bitu 0 w polu FORMAT
@@ -100,29 +101,6 @@ func decodeTimeBase(timeBase uint32) TimeBaseBits {
 	}
 }
 
-//func decodeChannelNames(reader *bytes.Reader, numChannels int) ([]string, error) {
-//	channelNames := make([]string, 0, numChannels) // Przechowywanie nazw kanałów
-//
-//	for i := 0; i < numChannels; i++ {
-//		// Odczytaj długość nazwy
-//		nameLen, err := reader.ReadByte()
-//		if err != nil {
-//			return nil, fmt.Errorf("Błąd odczytu długości nazwy kanału na pozycji %d: %v", i, err)
-//		}
-//
-//		// Odczytaj nazwę kanału
-//		name := make([]byte, nameLen)
-//		if _, err := reader.Read(name); err != nil {
-//			return nil, fmt.Errorf("Błąd odczytu nazwy kanału na pozycji %d: %v", i, err)
-//		}
-//
-//		// Dodaj nazwę do listy
-//		channelNames = append(channelNames, string(name))
-//	}
-//
-//	return channelNames, nil
-//}
-
 func decodeCHNAMWithOffsetAndLength(reader *bytes.Reader, totalNames int) ([]string, error) {
 	channelNames := make([]string, totalNames)
 
@@ -151,30 +129,6 @@ func decodeCHNAMWithOffsetAndLength(reader *bytes.Reader, totalNames int) ([]str
 	return channelNames, nil
 }
 
-//func decodeCHNAM(reader *bytes.Reader, phnmr, annmr, dgnmr int) ([]string, error) {
-//	totalNames := phnmr + annmr + (16 * dgnmr)
-//	channelNames := make([]string, totalNames)
-//
-//	for i := 0; i < totalNames; i++ {
-//		// Odczytaj długość nazwy
-//		nameLen, err := reader.ReadByte()
-//		if err != nil {
-//			return nil, fmt.Errorf("error reading channel name length: %v", err)
-//		}
-//
-//		// Odczytaj nazwę o długości `nameLen`
-//		name := make([]byte, nameLen)
-//		if _, err := reader.Read(name); err != nil {
-//			return nil, fmt.Errorf("error reading channel name: %v", err)
-//		}
-//
-//		// Dodaj nazwę do listy
-//		channelNames[i] = string(name)
-//	}
-//
-//	return channelNames, nil
-//}
-
 // TODO this can be used in Frame2
 //func decodeCHNAMFixedLength(reader *bytes.Reader, totalNames int) ([]string, error) {
 //	const nameLength = 16 // Każda nazwa ma stałe 16 bajtów
@@ -194,19 +148,20 @@ func decodeCHNAMWithOffsetAndLength(reader *bytes.Reader, totalNames int) ([]str
 //	return channelNames, nil
 //}
 
+// DecodeFlags dekoduje flagi na podstawie wartości uint16, zwracając mapę opisującą ustawione flagi
 func DecodeFlags(flags uint16) map[string]bool {
 	return map[string]bool{
-		"reserved":                  (flags & 0x0001) != 0,
-		"upsampled_with_interpol":   (flags & 0x0002) != 0,
-		"upsampled_with_extrapol":   (flags & 0x0004) != 0,
-		"downsampled_with_reselect": (flags & 0x0008) != 0,
-		"downsampled_with_fir":      (flags & 0x0010) != 0,
-		"downsampled_non_fir":       (flags & 0x0020) != 0,
-		"filtered_without_sampling": (flags & 0x0040) != 0,
-		"magnitude_adjusted":        (flags & 0x0080) != 0,
-		"phase_adjusted_rotation":   (flags & 0x0100) != 0,
-		"pseudo_phasor":             (flags & 0x0400) != 0,
-		"modification_applied":      (flags & 0x8000) != 0,
+		"reserved":                  (flags & 0x0001) != 0, // Bit 0: Zarezerwowane (nieużywane)
+		"upsampled_with_interpol":   (flags & 0x0002) != 0, // Bit 1: Próbkowanie w górę za pomocą interpolacji
+		"upsampled_with_extrapol":   (flags & 0x0004) != 0, // Bit 2: Próbkowanie w górę za pomocą ekstrapolacji
+		"downsampled_with_reselect": (flags & 0x0008) != 0, // Bit 3: Próbkowanie w dół z wyborem próbek
+		"downsampled_with_fir":      (flags & 0x0010) != 0, // Bit 4: Próbkowanie w dół z filtrem FIR
+		"downsampled_non_fir":       (flags & 0x0020) != 0, // Bit 5: Próbkowanie w dół bez użycia filtra FIR
+		"filtered_without_sampling": (flags & 0x0040) != 0, // Bit 6: Filtracja bez zmiany próbkowania
+		"magnitude_adjusted":        (flags & 0x0080) != 0, // Bit 7: Dopasowanie wielkości
+		"phase_adjusted_rotation":   (flags & 0x0100) != 0, // Bit 8: Dopasowanie fazy przez rotację
+		"pseudo_phasor":             (flags & 0x0400) != 0, // Bit 10: Pseudofazor
+		"modification_applied":      (flags & 0x8000) != 0, // Bit 15: Zastosowano modyfikację
 	}
 }
 
@@ -295,16 +250,28 @@ func DecodeAnalogScale(reader *bytes.Reader, count int) ([]AnalogScaleFactor, er
 	return analogScales, nil
 }
 
-// DecodeDigitalMask dekoduje DigitalMask z danych binarnych.
-func DecodeDigitalMask(reader *bytes.Reader, count int) ([]DigitalMask, error) {
-	digitalMasks := make([]DigitalMask, count)
-	for i := 0; i < count; i++ {
+// DecodeDigitalMask dekoduje maski cyfrowe z pola DIGUNIT o długości 4 bajtów.
+func DecodeDigitalMask(reader *bytes.Reader, numDigitals uint16) ([]DigitalMask, error) {
+	digitalMasks := make([]DigitalMask, numDigitals)
+
+	numDigitals = 0 //TODO temporary hardcoded
+
+	for i := 0; i < int(numDigitals); i++ {
 		var mask DigitalMask
-		if err := binary.Read(reader, binary.BigEndian, &mask.Mask); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu Mask dla DigitalMask: %v", err)
+
+		// Pierwsze 2 bajty - maska 1
+		if err := binary.Read(reader, binary.BigEndian, &mask.Mask1); err != nil {
+			return nil, fmt.Errorf("Błąd odczytu Mask1 dla DigitalMask: %v", err)
 		}
+
+		// Kolejne 2 bajty - maska 2
+		if err := binary.Read(reader, binary.BigEndian, &mask.Mask2); err != nil {
+			return nil, fmt.Errorf("Błąd odczytu Mask2 dla DigitalMask: %v", err)
+		}
+
 		digitalMasks[i] = mask
 	}
+
 	return digitalMasks, nil
 }
 
@@ -410,7 +377,7 @@ func DecodeConfigurationFrame3(data []byte) (*C37ConfigurationFrame3, error) {
 	header.AnalogScales = analogScales
 
 	// Dekodowanie masek cyfrowych
-	digitalMasks, err := DecodeDigitalMask(reader, int(header.NumDigitals))
+	digitalMasks, err := DecodeDigitalMask(reader, header.NumDigitals)
 	if err != nil {
 		return nil, fmt.Errorf("Błąd dekodowania DigitalMask: %v", err)
 	}
