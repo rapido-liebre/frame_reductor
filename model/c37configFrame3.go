@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
-	"math"
 )
 
-// C37ConfigurationFrame3 reprezentuje ramkę konfiguracji dla standardu C37.118.
+// C37ConfigurationFrame3 reprezentuje ramkę konfiguracji typu 3 dla standardu C37.118.
 type C37ConfigurationFrame3 struct {
 	Sync         uint16              `json:"sync"`          // Bajt synchronizujący z typem ramki i numerem wersji
 	FrameSize    uint16              `json:"frame_size"`    // Liczba bajtów w ramce
@@ -42,239 +40,6 @@ type C37ConfigurationFrame3 struct {
 	CRC          uint16              `json:"crc"`           // Suma kontrolna CRC-CCITT
 }
 
-// PhasorScaleFactor reprezentuje współczynnik konwersji dla kanałów fazorów z dodatkowymi flagami.
-type PhasorScaleFactor struct {
-	Flags           map[string]bool `json:"flags"`            // Flagi z mapowaniem bitowym
-	PhasorType      string          `json:"phasor_type"`      // Typ fazora: Voltage lub Current
-	PhasorComponent string          `json:"phasor_component"` // Komponent fazora (np. Phase A, Phase B)
-	ScaleFactor     float32         `json:"scale_factor"`     // Współczynnik skali
-	AngleOffset     float32         `json:"angle_offset"`     // Przesunięcie kąta
-}
-
-// AnalogScaleFactor reprezentuje współczynnik konwersji dla kanałów analogowych.
-type AnalogScaleFactor struct {
-	MagnitudeScale float32 `json:"magnitude_scale"` // Współczynnik skali wielkości w formacie IEEE 32-bit
-	Offset         float32 `json:"offset"`          // Przesunięcie w formacie IEEE 32-bit
-}
-
-// DigitalMask reprezentuje maskę dla cyfrowych słów statusu.
-type DigitalMask struct {
-	Mask1 uint16 `json:"mask1"` // Pierwsza maska cyfrowa (16 bitów)
-	Mask2 uint16 `json:"mask2"` // Druga maska cyfrowa (16 bitów)
-}
-
-// Definicje stałych dla bitu 0 w polu FORMAT
-const (
-	PhasorMagnitudeAndAngle = 0 // 0: magnitude i angle (polar)
-	PhasorRealAndImaginary  = 1 // 1: real i imaginary (rectangular)
-)
-
-// FormatBits struktura reprezentująca bity pola FORMAT
-type FormatBits struct {
-	FREQ_DFREQ uint8 // Bit 3: Format częstotliwości DFREQ (0: 16-bit, 1: floating point)
-	AnalogFmt  uint8 // Bit 2: Format analogowy (0: 16-bit, 1: floating point)
-	PhasorFmt  uint8 // Bit 1: Format fazorów (0: 16-bit, 1: floating point)
-	PhasorType uint8 // Bit 0: Typ fazora (0: magnitude i angle/polar, 1: real i imaginary/rectangular)
-}
-
-// Funkcja dekodująca bity pola FORMAT na strukturę FormatBits
-func decodeFormatBits(format uint16) FormatBits {
-	return FormatBits{
-		FREQ_DFREQ: uint8((format >> 3) & 1), // Bit 3
-		AnalogFmt:  uint8((format >> 2) & 1), // Bit 2
-		PhasorFmt:  uint8((format >> 1) & 1), // Bit 1
-		PhasorType: uint8(format & 1),        // Bit 0
-	}
-}
-
-// TimeBaseBits struktura reprezentująca bity pola TIME_BASE
-type TimeBaseBits struct {
-	Reserved       uint32 // Bits 31-15: Zarezerwowane, zawsze 0
-	TimeMultiplier uint32 // Bits 14-0: Mnożnik podstawy czasu
-}
-
-// Funkcja dekodująca bity pola TIME_BASE na strukturę TimeBaseBits
-func decodeTimeBase(timeBase uint32) TimeBaseBits {
-	return TimeBaseBits{
-		Reserved:       (timeBase >> 15) & 0x1FFFF, // Bits 31-15
-		TimeMultiplier: timeBase & 0x7FFF,          // Bits 14-0
-	}
-}
-
-func decodeCHNAMWithOffsetAndLength(reader *bytes.Reader, totalNames int) ([]string, error) {
-	channelNames := make([]string, totalNames)
-
-	// Przesunięcie o 1 bajt
-	if _, err := reader.Seek(-1, io.SeekCurrent); err != nil {
-		return nil, fmt.Errorf("error applying offset: %v", err)
-	}
-
-	for i := 0; i < totalNames; i++ {
-		// Odczytaj długość nazwy (1 bajt)
-		nameLen, err := reader.ReadByte()
-		if err != nil {
-			return nil, fmt.Errorf("error reading length of channel name at index %d: %v", i, err)
-		}
-
-		// Odczytaj nazwę o długości określonej w nameLen
-		name := make([]byte, nameLen)
-		if _, err := reader.Read(name); err != nil {
-			return nil, fmt.Errorf("error reading channel name at index %d: %v", i, err)
-		}
-
-		// Konwertuj bajty na string i dodaj do listy nazw
-		channelNames[i] = string(name)
-	}
-
-	return channelNames, nil
-}
-
-// TODO this can be used in Frame2
-//func decodeCHNAMFixedLength(reader *bytes.Reader, totalNames int) ([]string, error) {
-//	const nameLength = 16 // Każda nazwa ma stałe 16 bajtów
-//	channelNames := make([]string, totalNames)
-//
-//	for i := 0; i < totalNames; i++ {
-//		// Odczytaj nazwę o stałej długości
-//		name := make([]byte, nameLength)
-//		if _, err := reader.Read(name); err != nil {
-//			return nil, fmt.Errorf("error reading channel name at index %d: %v", i, err)
-//		}
-//
-//		// Trim trailing spaces or null bytes (jeśli są wypełnienia w nazwach)
-//		channelNames[i] = string(bytes.TrimRight(name, "\x00 "))
-//	}
-//
-//	return channelNames, nil
-//}
-
-// DecodeFlags dekoduje flagi na podstawie wartości uint16, zwracając mapę opisującą ustawione flagi
-func DecodeFlags(flags uint16) map[string]bool {
-	return map[string]bool{
-		"reserved":                  (flags & 0x0001) != 0, // Bit 0: Zarezerwowane (nieużywane)
-		"upsampled_with_interpol":   (flags & 0x0002) != 0, // Bit 1: Próbkowanie w górę za pomocą interpolacji
-		"upsampled_with_extrapol":   (flags & 0x0004) != 0, // Bit 2: Próbkowanie w górę za pomocą ekstrapolacji
-		"downsampled_with_reselect": (flags & 0x0008) != 0, // Bit 3: Próbkowanie w dół z wyborem próbek
-		"downsampled_with_fir":      (flags & 0x0010) != 0, // Bit 4: Próbkowanie w dół z filtrem FIR
-		"downsampled_non_fir":       (flags & 0x0020) != 0, // Bit 5: Próbkowanie w dół bez użycia filtra FIR
-		"filtered_without_sampling": (flags & 0x0040) != 0, // Bit 6: Filtracja bez zmiany próbkowania
-		"magnitude_adjusted":        (flags & 0x0080) != 0, // Bit 7: Dopasowanie wielkości
-		"phase_adjusted_rotation":   (flags & 0x0100) != 0, // Bit 8: Dopasowanie fazy przez rotację
-		"pseudo_phasor":             (flags & 0x0400) != 0, // Bit 10: Pseudofazor
-		"modification_applied":      (flags & 0x8000) != 0, // Bit 15: Zastosowano modyfikację
-	}
-}
-
-// DecodePhasorScale dekoduje PhasorScale z danych binarnych
-func DecodePhasorScale(reader *bytes.Reader, count int) ([]PhasorScaleFactor, error) {
-	phasorScales := make([]PhasorScaleFactor, count)
-
-	for i := 0; i < count; i++ {
-		var flags uint16
-		var phasorTypeAndComponent uint8
-		var reserved uint8
-		var scaleFactor uint32
-		var angleOffset uint32
-
-		// Odczyt pierwszego 4-bajtowego słowa (flags + typ + komponent)
-		if err := binary.Read(reader, binary.BigEndian, &flags); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu BitMappedFlags dla PhasorScale: %v", err)
-		}
-
-		if err := binary.Read(reader, binary.BigEndian, &phasorTypeAndComponent); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu Typu i Komponentu dla PhasorScale: %v", err)
-		}
-
-		if err := binary.Read(reader, binary.BigEndian, &reserved); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu Reserved dla PhasorScale: %v", err)
-		}
-
-		// Rozkodowanie flags
-		decodedFlags := DecodeFlags(flags)
-
-		// Rozbicie phasorTypeAndComponent na typ i komponent fazora
-		phasorType := "voltage"
-		if (phasorTypeAndComponent>>3)&0x01 == 1 {
-			phasorType = "current"
-		}
-
-		phasorComponent := map[uint8]string{
-			0b000: "zero sequence",
-			0b001: "positive sequence",
-			0b010: "negative sequence",
-			0b011: "reserved",
-			0b100: "phase A",
-			0b101: "phase B",
-			0b110: "phase C",
-			0b111: "reserved",
-		}[phasorTypeAndComponent&0x07]
-
-		// Odczyt drugiego 4-bajtowego słowa - Scale Factor
-		if err := binary.Read(reader, binary.BigEndian, &scaleFactor); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu ScaleFactor dla PhasorScale: %v", err)
-		}
-
-		// Odczyt trzeciego 4-bajtowego słowa - Angle Offset
-		if err := binary.Read(reader, binary.BigEndian, &angleOffset); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu AngleOffset dla PhasorScale: %v", err)
-		}
-
-		// Konwersja ScaleFactor i AngleOffset do float32
-		scaleFactorFloat := math.Float32frombits(scaleFactor)
-		angleOffsetFloat := math.Float32frombits(angleOffset)
-
-		phasorScales[i] = PhasorScaleFactor{
-			Flags:           decodedFlags,
-			PhasorType:      phasorType,
-			PhasorComponent: phasorComponent,
-			ScaleFactor:     scaleFactorFloat,
-			AngleOffset:     angleOffsetFloat,
-		}
-	}
-	return phasorScales, nil
-}
-
-// DecodeAnalogScale dekoduje AnalogScale z danych binarnych.
-func DecodeAnalogScale(reader *bytes.Reader, count int) ([]AnalogScaleFactor, error) {
-	analogScales := make([]AnalogScaleFactor, count)
-	for i := 0; i < count; i++ {
-		var scale AnalogScaleFactor
-		if err := binary.Read(reader, binary.BigEndian, &scale.MagnitudeScale); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu MagnitudeScale dla AnalogScale: %v", err)
-		}
-		if err := binary.Read(reader, binary.BigEndian, &scale.Offset); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu Offset dla AnalogScale: %v", err)
-		}
-		analogScales[i] = scale
-	}
-	return analogScales, nil
-}
-
-// DecodeDigitalMask dekoduje maski cyfrowe z pola DIGUNIT o długości 4 bajtów.
-func DecodeDigitalMask(reader *bytes.Reader, numDigitals uint16) ([]DigitalMask, error) {
-	digitalMasks := make([]DigitalMask, numDigitals)
-
-	numDigitals = 0 //TODO temporary hardcoded
-
-	for i := 0; i < int(numDigitals); i++ {
-		var mask DigitalMask
-
-		// Pierwsze 2 bajty - maska 1
-		if err := binary.Read(reader, binary.BigEndian, &mask.Mask1); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu Mask1 dla DigitalMask: %v", err)
-		}
-
-		// Kolejne 2 bajty - maska 2
-		if err := binary.Read(reader, binary.BigEndian, &mask.Mask2); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu Mask2 dla DigitalMask: %v", err)
-		}
-
-		digitalMasks[i] = mask
-	}
-
-	return digitalMasks, nil
-}
-
 func DecodeConfigurationFrame3(data []byte) (*C37ConfigurationFrame3, error) {
 	reader := bytes.NewReader(data)
 	var header C37ConfigurationFrame3
@@ -305,7 +70,7 @@ func DecodeConfigurationFrame3(data []byte) (*C37ConfigurationFrame3, error) {
 		return nil, fmt.Errorf("Błąd odczytu TimeBase: %v", err)
 	}
 	// Dekodowanie bitów pola TimeBase
-	header.TimeBase = decodeTimeBase(timeBase)
+	header.TimeBase = DecodeTimeBase(timeBase)
 
 	if err := binary.Read(reader, binary.BigEndian, &header.NumPMU); err != nil {
 		return nil, fmt.Errorf("Błąd odczytu NumPMU: %v", err)
@@ -354,7 +119,7 @@ func DecodeConfigurationFrame3(data []byte) (*C37ConfigurationFrame3, error) {
 	totalNames := int(header.NumPhasors) + int(header.NumAnalogs) // + int(header.NumDigitals) //TODO
 
 	// Dekodowanie nazw kanałów z przesunięciem o 2 bajty
-	channelNames, err := decodeCHNAMWithOffsetAndLength(reader, totalNames)
+	channelNames, err := DecodeCHNAMWithOffsetAndLength(reader, totalNames)
 	if err != nil {
 		log.Printf("Błąd odczytu ChannelNames: %v", err)
 		return nil, err

@@ -73,7 +73,7 @@ func ProcessFile() {
 	projectRoot := filepath.Join(workingDir, "..", "..")
 	fmt.Println("Katalog główny projektu:", projectRoot)
 
-	filePath := filepath.Join(projectRoot, "udp_frames_28.12.txt")
+	filePath := filepath.Join(projectRoot, "udp_frames_29.12.txt")
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -102,15 +102,22 @@ func ProcessFile() {
 		fmt.Printf("Header: %v\n", header)
 
 		switch header.DataFrameType {
+		case model.ConfigurationFrame2:
+			// Dekodowanie ramki konfiguracyjnej 2
+			cfgFrame2, err := model.DecodeConfigurationFrame2(frameData)
+			if err != nil {
+				fmt.Println("Błąd dekodowania ramki konfiguracyjnej 2:", err)
+				return
+			}
+			fmt.Printf("Decoded configuration frame 2: %+v\n", cfgFrame2)
 		case model.ConfigurationFrame3:
-			// Dekodowanie ramki konfiguracyjnej
+			// Dekodowanie ramki konfiguracyjnej 3
 			cfgFrame3, err := model.DecodeConfigurationFrame3(frameData)
 			if err != nil {
 				fmt.Println("Błąd dekodowania ramki konfiguracyjnej 3:", err)
 				return
 			}
 			fmt.Printf("Decoded configuration frame 3: %+v\n", cfgFrame3)
-
 		case model.DataFrame:
 			// Dekodowanie ramki z danymi
 			dataFrame, err := model.DecodeDataFrame(frameData[14:])
