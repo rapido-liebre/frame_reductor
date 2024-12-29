@@ -8,11 +8,12 @@ import (
 
 // C37DataFrame reprezentuje ramkę danych zdefiniowaną w standardzie C37.118-2011.
 type C37DataFrame struct {
-	Sync        uint16        `json:"sync"`         // Bajt synchronizujący i typ ramki
-	FrameSize   uint16        `json:"frame_size"`   // Całkowity rozmiar ramki
-	IDCode      uint16        `json:"id_code"`      // Identyfikator PMU/PDC
-	SOC         uint32        `json:"soc"`          // Sekunda od epoki UNIX
-	FracSec     FracSecBits   `json:"frac_sec"`     // Ułamek sekundy (FRACSEC)
+	//Sync        uint16        `json:"sync"`         // Bajt synchronizujący i typ ramki
+	//FrameSize   uint16        `json:"frame_size"`   // Całkowity rozmiar ramki
+	//IDCode      uint16        `json:"id_code"`      // Identyfikator PMU/PDC
+	//SOC         uint32        `json:"soc"`          // Sekunda od epoki UNIX
+	//FracSec     FracSecBits   `json:"frac_sec"`     // Ułamek sekundy (FRACSEC)
+	Stat        Stat          `json:"stat"`         // Flagi bitowe
 	NumPhasors  uint16        `json:"num_phasors"`  // Liczba fazorów
 	NumAnalogs  uint16        `json:"num_analogs"`  // Liczba wartości analogowych
 	NumDigitals uint16        `json:"num_digitals"` // Liczba cyfrowych słów statusowych
@@ -23,12 +24,24 @@ type C37DataFrame struct {
 	CRC         uint16        `json:"crc"`          // Suma kontrolna CRC
 }
 
-// FracSecBits reprezentuje ułamek sekundy oraz status synchronizacji.
-type FracSecBits struct {
-	FractionOfSecond uint32 `json:"fraction_of_second"` // Ułamek sekundy
-	TimeQuality      uint8  `json:"time_quality"`       // Bity jakości czasu
-	Locked           bool   `json:"locked"`             // Synchronizacja z czasem
+type Stat struct {
+	DataError      string // Bity 15–14: Błąd danych
+	PMUSync        bool   // Bit 13: PMU zsynchronizowany
+	DataSorting    bool   // Bit 12: Sortowanie danych
+	PMUTrigger     bool   // Bit 11: Wykryto wyzwalacz PMU
+	ConfigChange   bool   // Bit 10: Zmiana konfiguracji
+	DataModified   bool   // Bit 09: Dane zmodyfikowane
+	PMUTimeQuality uint8  // Bity 08–06: Jakość czasu PMU
+	UnlockedTime   string // Bity 05–04: Czas odblokowania synchronizacji
+	TriggerReason  string // Bity 03–00: Powód wyzwalacza
 }
+
+//// FracSecBits reprezentuje ułamek sekundy oraz status synchronizacji.
+//type FracSecBits struct {
+//	FractionOfSecond uint32 `json:"fraction_of_second"` // Ułamek sekundy
+//	TimeQuality      uint8  `json:"time_quality"`       // Bity jakości czasu
+//	Locked           bool   `json:"locked"`             // Synchronizacja z czasem
+//}
 
 // Phasor reprezentuje dane fazora (wielkość i kąt lub składowe prostokątne).
 type Phasor struct {
@@ -49,11 +62,62 @@ type StatusFlags struct {
 	ConfigurationOK bool `json:"configuration_ok"` // Konfiguracja jest poprawna
 }
 
-func decodeFracSec(fracSec uint32) FracSecBits {
-	return FracSecBits{
-		FractionOfSecond: fracSec & 0xFFFFFF,
-		TimeQuality:      uint8((fracSec >> 24) & 0x0F),
-		Locked:           (fracSec>>28)&0x1 != 0,
+//func decodeFracSec(fracSec uint32) FracSecBits {
+//	return FracSecBits{
+//		FractionOfSecond: fracSec & 0xFFFFFF,
+//		TimeQuality:      uint8((fracSec >> 24) & 0x0F),
+//		Locked:           (fracSec>>28)&0x1 != 0,
+//	}
+//}
+
+func DecodeStat(stat uint16) Stat {
+	dataErrorMap := map[uint8]string{
+		0b00: "Dobre dane pomiarowe, brak błędów",
+		0b01: "Błąd PMU. Brak informacji o danych",
+		0b10: "PMU w trybie testowym lub brak danych",
+		0b11: "Błąd PMU (nie używać wartości)",
+	}
+
+	unlockedTimeMap := map[uint8]string{
+		0b00: "Synchronizacja zablokowana lub odblokowana < 10 s (najlepsza jakość)",
+		0b01: "10 s ≤ odblokowany czas < 100 s",
+		0b10: "100 s < odblokowany czas ≤ 1000 s",
+		0b11: "Odblokowany czas > 1000 s",
+	}
+
+	triggerReasonMap := map[uint8]string{
+		0b1111: "Definicja użytkownika",
+		0b0111: "Cyfrowe",
+		0b0101: "df/dt wysokie",
+		0b0011: "Różnica kąta fazowego",
+		0b0001: "Mała amplituda",
+		0b0110: "Zarezerwowane",
+		0b0100: "Wysoka lub niska częstotliwość",
+		0b0010: "Duża amplituda",
+		0b0000: "Manualne",
+	}
+
+	// Dekodowanie bitów
+	dataError := uint8((stat >> 14) & 0b11)
+	pmuSync := (stat>>13)&1 == 0
+	dataSorting := (stat>>12)&1 == 1
+	pmuTrigger := (stat>>11)&1 == 1
+	configChange := (stat>>10)&1 == 1
+	dataModified := (stat>>9)&1 == 1
+	pmuTimeQuality := uint8((stat >> 6) & 0b111)
+	unlockedTime := uint8((stat >> 4) & 0b11)
+	triggerReason := uint8(stat & 0b1111)
+
+	return Stat{
+		DataError:      dataErrorMap[dataError],
+		PMUSync:        pmuSync,
+		DataSorting:    dataSorting,
+		PMUTrigger:     pmuTrigger,
+		ConfigChange:   configChange,
+		DataModified:   dataModified,
+		PMUTimeQuality: pmuTimeQuality,
+		UnlockedTime:   unlockedTimeMap[unlockedTime],
+		TriggerReason:  triggerReasonMap[triggerReason],
 	}
 }
 
@@ -71,26 +135,33 @@ func DecodeDataFrame(data []byte) (*C37DataFrame, error) {
 	reader := bytes.NewReader(data)
 	var frame C37DataFrame
 
-	// Dekodowanie nagłówka
-	if err := binary.Read(reader, binary.BigEndian, &frame.Sync); err != nil {
-		return nil, fmt.Errorf("błąd odczytu Sync: %v", err)
-	}
-	if err := binary.Read(reader, binary.BigEndian, &frame.FrameSize); err != nil {
-		return nil, fmt.Errorf("błąd odczytu FrameSize: %v", err)
-	}
-	if err := binary.Read(reader, binary.BigEndian, &frame.IDCode); err != nil {
-		return nil, fmt.Errorf("błąd odczytu IDCode: %v", err)
-	}
-	if err := binary.Read(reader, binary.BigEndian, &frame.SOC); err != nil {
-		return nil, fmt.Errorf("błąd odczytu SOC: %v", err)
-	}
+	//// Dekodowanie nagłówka
+	//if err := binary.Read(reader, binary.BigEndian, &frame.Sync); err != nil {
+	//	return nil, fmt.Errorf("błąd odczytu Sync: %v", err)
+	//}
+	//if err := binary.Read(reader, binary.BigEndian, &frame.FrameSize); err != nil {
+	//	return nil, fmt.Errorf("błąd odczytu FrameSize: %v", err)
+	//}
+	//if err := binary.Read(reader, binary.BigEndian, &frame.IDCode); err != nil {
+	//	return nil, fmt.Errorf("błąd odczytu IDCode: %v", err)
+	//}
+	//if err := binary.Read(reader, binary.BigEndian, &frame.SOC); err != nil {
+	//	return nil, fmt.Errorf("błąd odczytu SOC: %v", err)
+	//}
+	//
+	//// Dekodowanie FRACSEC
+	//var fracSec uint32
+	//if err := binary.Read(reader, binary.BigEndian, &fracSec); err != nil {
+	//	return nil, fmt.Errorf("błąd odczytu FRACSEC: %v", err)
+	//}
+	//frame.FracSec = decodeFracSec(fracSec)
 
-	// Dekodowanie FRACSEC
-	var fracSec uint32
-	if err := binary.Read(reader, binary.BigEndian, &fracSec); err != nil {
-		return nil, fmt.Errorf("błąd odczytu FRACSEC: %v", err)
+	// Dekodowanie flag bitowych
+	var stat uint16
+	if err := binary.Read(reader, binary.BigEndian, &stat); err != nil {
+		return nil, fmt.Errorf("błąd odczytu NumPhasors: %v", err)
 	}
-	frame.FracSec = decodeFracSec(fracSec)
+	frame.Stat = DecodeStat(stat)
 
 	// Liczba kanałów
 	if err := binary.Read(reader, binary.BigEndian, &frame.NumPhasors); err != nil {

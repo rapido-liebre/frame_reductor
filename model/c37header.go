@@ -4,19 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"time"
 )
-
-// C37Header zawiera podstawowe informacje nagłówka dla wszystkich ramek zgodnie z normą IEEE C37.118.2-2011
-type C37Header struct {
-	Sync          uint16 // Pole synchronizacji
-	FrameSize     uint16 // Rozmiar ramki
-	IDCode        uint16 // Identyfikator urządzenia
-	Soc           uint32 // Sekunda epoki Unix
-	FracSec       uint32 // Część sekundy
-	Chk           uint16 // CRC-CCITT
-	DataFrameType FrameType
-	VersionNumber Version
-}
 
 // FrameType określa typ ramki na podstawie bitów 6-4 w polu Sync
 type FrameType int
@@ -38,9 +27,28 @@ const (
 	Version2 Version = 0b0010 // C37118.2-2011
 )
 
+// C37Header zawiera podstawowe informacje nagłówka dla wszystkich ramek zgodnie z normą IEEE C37.118.2-2011
+type C37Header struct {
+	Sync      uint16 // Pole synchronizacji
+	FrameSize uint16 // Rozmiar ramki
+	IDCode    uint16 // Identyfikator urządzenia
+	Soc       uint32 // Sekunda epoki Unix
+	FracSec   uint32 // Część sekundy
+	//Chk           uint16 // CRC-CCITT
+	DataFrameType FrameType
+	VersionNumber Version
+	TimeStamp     time.Time
+	FractionSec   FracSec
+}
+
+type FracSec struct {
+	MessageTimeQuality uint8   // 8-bitowa jakość czasu
+	FractionOfSecond   float64 // Ułamek sekundy jako float64
+}
+
 // DecodeC37Header dekoduje nagłówek ramki C37, analizując pola Sync, FRAMESIZE, IDCODE, Soc, Fracsec oraz Chk
 func DecodeC37Header(data []byte) (*C37Header, error) {
-	if len(data) < 16 {
+	if len(data) < 14 {
 		return nil, fmt.Errorf("długość danych %d jest zbyt krótka dla nagłówka", len(data))
 	}
 
@@ -64,17 +72,39 @@ func DecodeC37Header(data []byte) (*C37Header, error) {
 		return nil, fmt.Errorf("błąd odczytu Fracsec: %v", err)
 	}
 
-	// Dekodowanie Chk
-	if err := binary.Read(reader, binary.BigEndian, &header.Chk); err != nil {
-		return nil, fmt.Errorf("błąd odczytu Chk: %v", err)
-	}
+	//// Dekodowanie Chk
+	//if err := binary.Read(reader, binary.BigEndian, &header.Chk); err != nil {
+	//	return nil, fmt.Errorf("błąd odczytu Chk: %v", err)
+	//}
 
 	// Ustal typ ramki i wersję
 	//fmt.Printf("Sync in hex: %X\n", header.Sync)
 	header.DataFrameType = FrameType((header.Sync >> 4) & 0b111) // Bity 6-4
 	header.VersionNumber = Version(header.Sync & 0b1111)         // Bity 3-0
 
+	// Konwersja na czas
+	unixTime := int64(header.Soc)                   // konwersja uint32 na int64
+	header.TimeStamp = time.Unix(unixTime, 0).UTC() // tworzenie obiektu time.Time w UTC
+
+	header.FractionSec = DecodeFracSec(header.FracSec, 1)
+
 	return header, nil
+}
+
+func DecodeFracSec(fracSec uint32, timeBase uint32) FracSec {
+	// Wyodrębnienie Message Time Quality (8 najwyższych bitów)
+	messageTimeQuality := uint8(fracSec >> 24)
+
+	// Wyodrębnienie Fractional Second (24 najniższych bitów)
+	fractionalSecondRaw := fracSec & 0x00FFFFFF
+
+	// Obliczenie rzeczywistego ułamka sekundy
+	fractionOfSecond := float64(fractionalSecondRaw) / float64(timeBase)
+
+	return FracSec{
+		MessageTimeQuality: messageTimeQuality,
+		FractionOfSecond:   fractionOfSecond,
+	}
 }
 
 //// CalculateTimeUTC - funkcja obliczająca czas UTC na podstawie nagłówka
