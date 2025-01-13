@@ -4,26 +4,22 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 )
 
-// C37DataFrame reprezentuje ramkę danych zdefiniowaną w standardzie C37.118-2011.
+// C37DataFrame reprezentuje ramkę danych zdefiniowaną w standardzie C37.118
 type C37DataFrame struct {
-	//Sync        uint16        `json:"sync"`         // Bajt synchronizujący i typ ramki
-	//FrameSize   uint16        `json:"frame_size"`   // Całkowity rozmiar ramki
-	//IDCode      uint16        `json:"id_code"`      // Identyfikator PMU/PDC
-	//SOC         uint32        `json:"soc"`          // Sekunda od epoki UNIX
-	//FracSec     FracSecBits   `json:"frac_sec"`     // Ułamek sekundy (FRACSEC)
-	Stat        Stat          `json:"stat"`         // Flagi bitowe
-	NumPhasors  uint16        `json:"num_phasors"`  // Liczba fazorów
-	NumAnalogs  uint16        `json:"num_analogs"`  // Liczba wartości analogowych
-	NumDigitals uint16        `json:"num_digitals"` // Liczba cyfrowych słów statusowych
-	Phasors     []Phasor      `json:"phasors"`      // Dane fazorów
-	Analogs     []float32     `json:"analogs"`      // Dane analogowe
-	Digitals    []DigitalWord `json:"digitals"`     // Dane cyfrowe
-	StatusFlags StatusFlags   `json:"status_flags"` // Flagi statusowe PMU
-	CRC         uint16        `json:"crc"`          // Suma kontrolna CRC
+	C37Header
+	Stat      Stat      `json:"stat"`      // Flagi bitowe
+	Phasors   []Phasor  `json:"phasors"`   // Dane fazorów
+	Frequency float64   `json:"frequency"` // Dane częstotliwości
+	Rocof     float64   `json:"rocof"`     // Dane dF/dt ROCOF
+	Analogs   []Analog  `json:"analogs"`   // Dane analogowe
+	Digitals  []Digital `json:"digitals"`  // Dane cyfrowe
+	CRC       uint16    `json:"crc"`       // Suma kontrolna CRC
 }
 
+// Stat reprezentuje zdekodowane wartości pól STAT w ramce C37.118
 type Stat struct {
 	DataError      string // Bity 15–14: Błąd danych
 	PMUSync        bool   // Bit 13: PMU zsynchronizowany
@@ -31,30 +27,32 @@ type Stat struct {
 	PMUTrigger     bool   // Bit 11: Wykryto wyzwalacz PMU
 	ConfigChange   bool   // Bit 10: Zmiana konfiguracji
 	DataModified   bool   // Bit 09: Dane zmodyfikowane
-	PMUTimeQuality uint8  // Bity 08–06: Jakość czasu PMU
+	PMUTimeQuality string // Bity 08–06: Jakość czasu PMU
 	UnlockedTime   string // Bity 05–04: Czas odblokowania synchronizacji
 	TriggerReason  string // Bity 03–00: Powód wyzwalacza
 }
 
-//// FracSecBits reprezentuje ułamek sekundy oraz status synchronizacji.
-//type FracSecBits struct {
-//	FractionOfSecond uint32 `json:"fraction_of_second"` // Ułamek sekundy
-//	TimeQuality      uint8  `json:"time_quality"`       // Bity jakości czasu
-//	Locked           bool   `json:"locked"`             // Synchronizacja z czasem
-//}
-
-// Phasor reprezentuje dane fazora (wielkość i kąt lub składowe prostokątne).
+// Phasor reprezentuje dane pojedynczego fazora (wielkość i kąt lub składowe prostokątne)
 type Phasor struct {
-	Magnitude float32 `json:"magnitude"` // Wielkość fazora
-	Angle     float32 `json:"angle"`     // Kąt fazora w stopniach
+	Name      string      // Nazwa fazora
+	Type      ChannelType // Typ fazora (napięcie/prąd)
+	Magnitude float64     // Wielkość fazora (polar) lub część rzeczywista (rectangular)
+	Angle     float64     // Kąt fazora w radianach (polar) lub część urojona (rectangular)
 }
 
-// DigitalWord reprezentuje cyfrowe słowo statusowe PMU.
-type DigitalWord struct {
-	Value uint16 `json:"value"` // Wartość słowa cyfrowego
+// Analog reprezentuje odczytaną wartość kanału analogowego
+type Analog struct {
+	Name  string  // Nazwa analogu
+	Value float64 // Wartość analogowa
 }
 
-// StatusFlags reprezentuje szczegółowe flagi statusowe PMU.
+// Digital reprezentuje zdekodowany kanał cyfrowy, słowo statusowe PMU
+type Digital struct {
+	Name  string // Nazwa kanału cyfrowego
+	Value bool   // Wartość cyfrowa (true/false)
+}
+
+// StatusFlags reprezentuje szczegółowe flagi statusowe PMU
 type StatusFlags struct {
 	DataValid       bool `json:"data_valid"`       // Dane są poprawne
 	PMUError        bool `json:"pmu_error"`        // Błąd PMU
@@ -62,14 +60,66 @@ type StatusFlags struct {
 	ConfigurationOK bool `json:"configuration_ok"` // Konfiguracja jest poprawna
 }
 
-//func decodeFracSec(fracSec uint32) FracSecBits {
-//	return FracSecBits{
-//		FractionOfSecond: fracSec & 0xFFFFFF,
-//		TimeQuality:      uint8((fracSec >> 24) & 0x0F),
-//		Locked:           (fracSec>>28)&0x1 != 0,
-//	}
-//}
+// DecodeDataFrame dekoduje ramkę danych C37.118
+func DecodeDataFrame(data []byte, header C37Header) (*C37DataFrame, error) {
+	reader := bytes.NewReader(data)
+	var frame C37DataFrame
 
+	frame.C37Header = header
+
+	// Dekodowanie flag bitowych
+	var stat uint16
+	if err := binary.Read(reader, binary.BigEndian, &stat); err != nil {
+		return nil, fmt.Errorf("błąd odczytu flag bitowych Stat: %v", err)
+	}
+	frame.Stat = DecodeStat(stat)
+
+	// Liczba kanałów
+	format := CfgFrame2.Format
+
+	// Dekodowanie fazorów
+	phasors, err := DecodePhasors(reader, format)
+	if err != nil {
+		return nil, fmt.Errorf("błąd odczytu fazorów: %v", err)
+	}
+	frame.Phasors = phasors
+
+	// Dekodowanie częstotliwości
+	freq, err := DecodeFrequency(reader, format)
+	if err != nil {
+		return nil, fmt.Errorf("błąd odczytu częstotliwości: %v", err)
+	}
+	frame.Frequency = freq
+
+	// Dekodowanie dF/dt
+	rocof, err := DecodeROCOF(reader, format)
+	if err != nil {
+		return nil, fmt.Errorf("błąd odczytu ROCOF dF/dt: %v", err)
+	}
+	frame.Rocof = rocof
+
+	analogs, err := DecodeAnalogs(reader, format)
+	if err != nil {
+		return nil, fmt.Errorf("błąd odczytu kanałów analogowych: %v", err)
+	}
+	frame.Analogs = analogs
+
+	digitals, err := DecodeDigitals(reader)
+	if err != nil {
+		return nil, fmt.Errorf("błąd odczytu kanałów cyfrowych: %v", err)
+	}
+	frame.Digitals = digitals
+
+	// Dekodowanie CRC
+	if err := binary.Read(reader, binary.BigEndian, &frame.CRC); err != nil {
+		return nil, fmt.Errorf("błąd odczytu CRC: %v", err)
+	}
+
+	return &frame, nil
+}
+
+// DecodeStat dekoduje wartość STAT (16-bitową mapę bitów) na strukturę Stat, zawierającą szczegółowe informacje
+// o stanie PMU, takie jak błędy danych, jakość czasu, powód wyzwalacza i inne flagi.
 func DecodeStat(stat uint16) Stat {
 	dataErrorMap := map[uint8]string{
 		0b00: "Dobre dane pomiarowe, brak błędów",
@@ -97,6 +147,17 @@ func DecodeStat(stat uint16) Stat {
 		0b0000: "Manualne",
 	}
 
+	pmuTimeQualityMap := map[uint8]string{
+		0b111: "Maksymalny błąd czasu > 10 ms lub nieznany",
+		0b110: "Maksymalny błąd czasu < 10 ms",
+		0b101: "Maksymalny błąd czasu < 1 ms",
+		0b100: "Maksymalny błąd czasu < 100 μs",
+		0b011: "Maksymalny błąd czasu < 10 μs",
+		0b010: "Maksymalny błąd czasu < 1 μs",
+		0b001: "Maksymalny błąd czasu < 100 ns",
+		0b000: "Nie używany (kod z poprzedniej wersji profilu)",
+	}
+
 	// Dekodowanie bitów
 	dataError := uint8((stat >> 14) & 0b11)
 	pmuSync := (stat>>13)&1 == 0
@@ -115,196 +176,507 @@ func DecodeStat(stat uint16) Stat {
 		PMUTrigger:     pmuTrigger,
 		ConfigChange:   configChange,
 		DataModified:   dataModified,
-		PMUTimeQuality: pmuTimeQuality,
+		PMUTimeQuality: pmuTimeQualityMap[pmuTimeQuality],
 		UnlockedTime:   unlockedTimeMap[unlockedTime],
 		TriggerReason:  triggerReasonMap[triggerReason],
 	}
 }
 
-func decodeStatusFlags(flags uint16) StatusFlags {
-	return StatusFlags{
-		DataValid:       (flags & 0x0001) != 0,
-		PMUError:        (flags & 0x0002) != 0,
-		DataSorted:      (flags & 0x0004) != 0,
-		ConfigurationOK: (flags & 0x0008) != 0,
+// EncodeStat koduje strukturę Stat na 16-bitową wartość STAT.
+func EncodeStat(stat Stat) (uint16, error) {
+	// Mapa odwrotna do dekodowania DataError
+	dataErrorMap := map[string]uint8{
+		"Dobre dane pomiarowe, brak błędów":     0b00,
+		"Błąd PMU. Brak informacji o danych":    0b01,
+		"PMU w trybie testowym lub brak danych": 0b10,
+		"Błąd PMU (nie używać wartości)":        0b11,
 	}
+
+	// Mapa odwrotna do dekodowania UnlockedTime
+	unlockedTimeMap := map[string]uint8{
+		"Synchronizacja zablokowana lub odblokowana < 10 s (najlepsza jakość)": 0b00,
+		"10 s ≤ odblokowany czas < 100 s":                                      0b01,
+		"100 s < odblokowany czas ≤ 1000 s":                                    0b10,
+		"Odblokowany czas > 1000 s":                                            0b11,
+	}
+
+	// Mapa odwrotna do dekodowania TriggerReason
+	triggerReasonMap := map[string]uint8{
+		"Definicja użytkownika":          0b1111,
+		"Cyfrowe":                        0b0111,
+		"df/dt wysokie":                  0b0101,
+		"Różnica kąta fazowego":          0b0011,
+		"Mała amplituda":                 0b0001,
+		"Zarezerwowane":                  0b0110,
+		"Wysoka lub niska częstotliwość": 0b0100,
+		"Duża amplituda":                 0b0010,
+		"Manualne":                       0b0000,
+	}
+
+	// Mapa odwrotna do dekodowania PMUTimeQuality
+	pmuTimeQualityMap := map[string]uint8{
+		"Maksymalny błąd czasu > 10 ms lub nieznany":     0b111,
+		"Maksymalny błąd czasu < 10 ms":                  0b110,
+		"Maksymalny błąd czasu < 1 ms":                   0b101,
+		"Maksymalny błąd czasu < 100 μs":                 0b100,
+		"Maksymalny błąd czasu < 10 μs":                  0b011,
+		"Maksymalny błąd czasu < 1 μs":                   0b010,
+		"Maksymalny błąd czasu < 100 ns":                 0b001,
+		"Nie używany (kod z poprzedniej wersji profilu)": 0b000,
+	}
+
+	// Kodowanie poszczególnych pól
+	var encoded uint16
+
+	// DataError
+	dataError, ok := dataErrorMap[stat.DataError]
+	if !ok {
+		return 0, fmt.Errorf("nieprawidłowa wartość DataError: %s", stat.DataError)
+	}
+	encoded |= uint16(dataError) << 14
+
+	// PMUSync
+	if !stat.PMUSync {
+		encoded |= 1 << 13
+	}
+
+	// DataSorting
+	if stat.DataSorting {
+		encoded |= 1 << 12
+	}
+
+	// PMUTrigger
+	if stat.PMUTrigger {
+		encoded |= 1 << 11
+	}
+
+	// ConfigChange
+	if stat.ConfigChange {
+		encoded |= 1 << 10
+	}
+
+	// DataModified
+	if stat.DataModified {
+		encoded |= 1 << 9
+	}
+
+	// PMUTimeQuality
+	pmuTimeQuality, ok := pmuTimeQualityMap[stat.PMUTimeQuality]
+	if !ok {
+		return 0, fmt.Errorf("nieprawidłowa wartość PMUTimeQuality: %s", stat.PMUTimeQuality)
+	}
+	encoded |= uint16(pmuTimeQuality) << 6
+
+	// UnlockedTime
+	unlockedTime, ok := unlockedTimeMap[stat.UnlockedTime]
+	if !ok {
+		return 0, fmt.Errorf("nieprawidłowa wartość UnlockedTime: %s", stat.UnlockedTime)
+	}
+	encoded |= uint16(unlockedTime) << 4
+
+	// TriggerReason
+	triggerReason, ok := triggerReasonMap[stat.TriggerReason]
+	if !ok {
+		return 0, fmt.Errorf("nieprawidłowa wartość TriggerReason: %s", stat.TriggerReason)
+	}
+	encoded |= uint16(triggerReason)
+
+	return encoded, nil
 }
 
-// DecodeDataFrame dekoduje ramkę danych C37.118.
-func DecodeDataFrame(data []byte) (*C37DataFrame, error) {
-	reader := bytes.NewReader(data)
-	var frame C37DataFrame
+// DecodePhasors dekoduje fazory (PHASORS) na podstawie konfiguracji i formatu
+func DecodePhasors(reader *bytes.Reader, format FormatBits) ([]Phasor, error) {
+	phasors := make([]Phasor, len(CfgFrame2.PhasorUnits))
 
-	//// Dekodowanie nagłówka
-	//if err := binary.Read(reader, binary.BigEndian, &frame.Sync); err != nil {
-	//	return nil, fmt.Errorf("błąd odczytu Sync: %v", err)
-	//}
-	//if err := binary.Read(reader, binary.BigEndian, &frame.FrameSize); err != nil {
-	//	return nil, fmt.Errorf("błąd odczytu FrameSize: %v", err)
-	//}
-	//if err := binary.Read(reader, binary.BigEndian, &frame.IDCode); err != nil {
-	//	return nil, fmt.Errorf("błąd odczytu IDCode: %v", err)
-	//}
-	//if err := binary.Read(reader, binary.BigEndian, &frame.SOC); err != nil {
-	//	return nil, fmt.Errorf("błąd odczytu SOC: %v", err)
-	//}
-	//
-	//// Dekodowanie FRACSEC
-	//var fracSec uint32
-	//if err := binary.Read(reader, binary.BigEndian, &fracSec); err != nil {
-	//	return nil, fmt.Errorf("błąd odczytu FRACSEC: %v", err)
-	//}
-	//frame.FracSec = decodeFracSec(fracSec)
+	for i := 0; i < len(CfgFrame2.PhasorUnits); i++ {
+		var magnitude float64
+		var angle float64
 
-	// Dekodowanie flag bitowych
-	var stat uint16
-	if err := binary.Read(reader, binary.BigEndian, &stat); err != nil {
-		return nil, fmt.Errorf("błąd odczytu NumPhasors: %v", err)
-	}
-	frame.Stat = DecodeStat(stat)
+		if format.PhasorFmt == 0 { // 16-bit format
+			if format.PhasorType == 0 { // Polar format
+				var rawMagnitude uint16
+				var rawAngle int16
 
-	// Liczba kanałów
-	if err := binary.Read(reader, binary.BigEndian, &frame.NumPhasors); err != nil {
-		return nil, fmt.Errorf("błąd odczytu NumPhasors: %v", err)
-	}
-	if err := binary.Read(reader, binary.BigEndian, &frame.NumAnalogs); err != nil {
-		return nil, fmt.Errorf("błąd odczytu NumAnalogs: %v", err)
-	}
-	if err := binary.Read(reader, binary.BigEndian, &frame.NumDigitals); err != nil {
-		return nil, fmt.Errorf("błąd odczytu NumDigitals: %v", err)
-	}
+				if err := binary.Read(reader, binary.BigEndian, &rawMagnitude); err != nil {
+					return nil, fmt.Errorf("błąd odczytu wielkości fazora (polar, 16-bit): %v", err)
+				}
+				if err := binary.Read(reader, binary.BigEndian, &rawAngle); err != nil {
+					return nil, fmt.Errorf("błąd odczytu kąta fazora (polar, 16-bit): %v", err)
+				}
 
-	// Dekodowanie fazorów
-	frame.Phasors = make([]Phasor, frame.NumPhasors)
-	for i := 0; i < int(frame.NumPhasors); i++ {
-		var magnitude, angle float32
-		if err := binary.Read(reader, binary.BigEndian, &magnitude); err != nil {
-			return nil, fmt.Errorf("błąd odczytu magnitude fazora: %v", err)
+				magnitude = float64(rawMagnitude)
+				angle = float64(rawAngle) / 10000.0 // Skala w radianach
+			} else { // Rectangular format
+				var realValue int16
+				var imaginaryValue int16
+
+				if err := binary.Read(reader, binary.BigEndian, &realValue); err != nil {
+					return nil, fmt.Errorf("błąd odczytu części rzeczywistej fazora (rectangular, 16-bit): %v", err)
+				}
+				if err := binary.Read(reader, binary.BigEndian, &imaginaryValue); err != nil {
+					return nil, fmt.Errorf("błąd odczytu części urojonej fazora (rectangular, 16-bit): %v", err)
+				}
+
+				magnitude = float64(realValue)
+				angle = float64(imaginaryValue)
+			}
+		} else { // Floating point (32-bit) format
+			if format.PhasorType == 0 { // Rectangular format
+				var realVal float32
+				var imaginaryVal float32
+
+				if err := binary.Read(reader, binary.BigEndian, &realVal); err != nil {
+					return nil, fmt.Errorf("błąd odczytu części rzeczywistej fazora (rectangular, floating point): %v", err)
+				}
+				if err := binary.Read(reader, binary.BigEndian, &imaginaryVal); err != nil {
+					return nil, fmt.Errorf("błąd odczytu części urojonej fazora (rectangular, floating point): %v", err)
+				}
+
+				magnitude = float64(realVal)
+				angle = float64(imaginaryVal)
+			} else { // Polar format
+				var rawMagnitude float32
+				var rawAngle float32
+
+				if err := binary.Read(reader, binary.BigEndian, &rawMagnitude); err != nil {
+					return nil, fmt.Errorf("błąd odczytu wielkości fazora (polar, floating point): %v", err)
+				}
+				if err := binary.Read(reader, binary.BigEndian, &rawAngle); err != nil {
+					return nil, fmt.Errorf("błąd odczytu kąta fazora (polar, floating point): %v", err)
+				}
+
+				magnitude = float64(rawMagnitude)
+				angle = float64(rawAngle)
+			}
 		}
-		if err := binary.Read(reader, binary.BigEndian, &angle); err != nil {
-			return nil, fmt.Errorf("błąd odczytu angle fazora: %v", err)
+
+		phasors[i] = Phasor{
+			Name:      CfgFrame2.ChannelNames[i],            // Nazwa z konfiguracji
+			Type:      CfgFrame2.PhasorUnits[i].ChannelType, // Typ kanału (napięcie/prąd)
+			Magnitude: magnitude,
+			Angle:     angle,
 		}
-		frame.Phasors[i] = Phasor{Magnitude: magnitude, Angle: angle}
+	}
+
+	return phasors, nil
+}
+
+// EncodePhasors koduje fazory i zwraca ich bajty.
+// Funkcja pozostawia tylko fazor U_SEQ+ i usuwa pozostałe.
+func EncodePhasors(phasors []Phasor) ([]byte, error) {
+	var buf bytes.Buffer
+	format := CfgFrame2.Format
+
+	// Znajdź fazor "U_SEQ+"
+	var selectedPhasor *Phasor
+	for _, phasor := range phasors {
+		if phasor.Name == "U_SEQ+" {
+			selectedPhasor = &phasor
+			break
+		}
+	}
+
+	if selectedPhasor == nil {
+		return nil, fmt.Errorf("fazor U_SEQ+ nie został znaleziony")
+	}
+
+	// Kodowanie fazora "U_SEQ+"
+	if format.PhasorFmt == 0 { // 16-bit format
+		if format.PhasorType == 0 { // Polar format
+			// Zapis wielkości
+			rawMagnitude := uint16(selectedPhasor.Magnitude)
+			if err := binary.Write(&buf, binary.BigEndian, rawMagnitude); err != nil {
+				return nil, fmt.Errorf("błąd zapisu wielkości fazora (polar, 16-bit): %v", err)
+			}
+
+			// Zapis kąta
+			rawAngle := int16(selectedPhasor.Angle * 10000.0) // Skala w radianach
+			if err := binary.Write(&buf, binary.BigEndian, rawAngle); err != nil {
+				return nil, fmt.Errorf("błąd zapisu kąta fazora (polar, 16-bit): %v", err)
+			}
+		} else { // Rectangular format
+			// Zapis części rzeczywistej
+			realValue := int16(selectedPhasor.Magnitude)
+			if err := binary.Write(&buf, binary.BigEndian, realValue); err != nil {
+				return nil, fmt.Errorf("błąd zapisu części rzeczywistej fazora (rectangular, 16-bit): %v", err)
+			}
+
+			// Zapis części urojonej
+			imaginaryValue := int16(selectedPhasor.Angle)
+			if err := binary.Write(&buf, binary.BigEndian, imaginaryValue); err != nil {
+				return nil, fmt.Errorf("błąd zapisu części urojonej fazora (rectangular, 16-bit): %v", err)
+			}
+		}
+	} else { // Floating point (32-bit) format
+		if format.PhasorType == 0 { // Polar format
+			// Zapis wielkości
+			rawMagnitude := float32(selectedPhasor.Magnitude)
+			if err := binary.Write(&buf, binary.BigEndian, rawMagnitude); err != nil {
+				return nil, fmt.Errorf("błąd zapisu wielkości fazora (polar, floating point): %v", err)
+			}
+
+			// Zapis kąta
+			rawAngle := float32(selectedPhasor.Angle)
+			if err := binary.Write(&buf, binary.BigEndian, rawAngle); err != nil {
+				return nil, fmt.Errorf("błąd zapisu kąta fazora (polar, floating point): %v", err)
+			}
+		} else { // Rectangular format
+			// Zapis części rzeczywistej
+			realValue := float32(selectedPhasor.Magnitude)
+			if err := binary.Write(&buf, binary.BigEndian, realValue); err != nil {
+				return nil, fmt.Errorf("błąd zapisu części rzeczywistej fazora (rectangular, floating point): %v", err)
+			}
+
+			// Zapis części urojonej
+			imaginaryValue := float32(selectedPhasor.Angle)
+			if err := binary.Write(&buf, binary.BigEndian, imaginaryValue); err != nil {
+				return nil, fmt.Errorf("błąd zapisu części urojonej fazora (rectangular, floating point): %v", err)
+			}
+		}
+	}
+
+	return buf.Bytes(), nil
+}
+
+// DecodeFrequency dekoduje częstotliwość (FREQ) na podstawie konfiguracji i formatu
+func DecodeFrequency(reader *bytes.Reader, format FormatBits) (float64, error) {
+	var frequency float64
+	var nominalFrequency float64
+
+	// Odczytaj nominalną częstotliwość ze struktury FNom
+	if CfgFrame2.FNom.Is50Hz {
+		nominalFrequency = 50.0 // 50 Hz
+	} else if CfgFrame2.FNom.Is60Hz {
+		nominalFrequency = 60.0 // 60 Hz
+	} else {
+		return 0, fmt.Errorf("nieznana nominalna częstotliwość: FNom nie wskazuje ani 50 Hz, ani 60 Hz")
+	}
+
+	// Dekodowanie na podstawie formatu
+	if format.FREQ_DFREQ == 0 { // 16-bit integer format
+		var rawFreq int16
+		if err := binary.Read(reader, binary.BigEndian, &rawFreq); err != nil {
+			return 0, fmt.Errorf("błąd odczytu częstotliwości (16-bit): %v", err)
+		}
+
+		// Przeskaluj wartość na mHz i dodaj do nominalnej częstotliwości
+		frequency = nominalFrequency + float64(rawFreq)/1000.0
+	} else { // 32-bit floating-point format
+		var rawFreq float32
+		if err := binary.Read(reader, binary.BigEndian, &rawFreq); err != nil {
+			return 0, fmt.Errorf("błąd odczytu częstotliwości (floating-point): %v", err)
+		}
+
+		// Wartość surowa już zawiera pełną częstotliwość
+		frequency = float64(rawFreq)
+	}
+
+	return frequency, nil
+}
+
+//// EncodeFrequency koduje wartość częstotliwości (FREQ) na podstawie konfiguracji i formatu.
+//// Funkcja zwraca zakodowane bajty reprezentujące częstotliwość.
+//func EncodeFrequency(frequency float64) ([]byte, error) {
+//	var buf bytes.Buffer
+//	var nominalFrequency float64
+//	format := CfgFrame2.Format
+//
+//	// Odczytaj nominalną częstotliwość ze struktury FNom
+//	if CfgFrame2.FNom.Is50Hz {
+//		nominalFrequency = 50.0 // 50 Hz
+//	} else if CfgFrame2.FNom.Is60Hz {
+//		nominalFrequency = 60.0 // 60 Hz
+//	} else {
+//		return nil, fmt.Errorf("nieznana nominalna częstotliwość: FNom nie wskazuje ani 50 Hz, ani 60 Hz")
+//	}
+//
+//	// Kodowanie na podstawie formatu
+//	if format.FREQ_DFREQ == 0 { // 16-bit integer format
+//		// Oblicz różnicę w stosunku do nominalnej częstotliwości i przeskaluj na mHz
+//		rawFreq := int16((frequency - nominalFrequency) * 1000.0)
+//
+//		// Zapisz wartość jako 16-bitowy integer
+//		if err := binary.Write(&buf, binary.BigEndian, rawFreq); err != nil {
+//			return nil, fmt.Errorf("błąd zapisu częstotliwości (16-bit): %v", err)
+//		}
+//	} else { // 32-bit floating-point format
+//		// Zapisz wartość częstotliwości jako 32-bitowy float
+//		rawFreq := float32(frequency)
+//		if err := binary.Write(&buf, binary.BigEndian, rawFreq); err != nil {
+//			return nil, fmt.Errorf("błąd zapisu częstotliwości (floating-point): %v", err)
+//		}
+//	}
+//
+//	return buf.Bytes(), nil
+//}
+
+// EncodeFrequency koduje wartość częstotliwości (FREQ) na podstawie konfiguracji i formatu.
+func EncodeFrequency(frequency float64) ([]byte, error) {
+	var buf bytes.Buffer
+
+	// Jeśli chcesz zawsze kodować jako float32 (zmiennoprzecinkowa)
+	rawFreq := float32(frequency)
+
+	// Zapisz wartość częstotliwości jako 32-bitowy float (IEEE 754)
+	if err := binary.Write(&buf, binary.BigEndian, rawFreq); err != nil {
+		return nil, fmt.Errorf("błąd zapisu częstotliwości (floating-point): %v", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// DecodeROCOF dekoduje dF/dt (DFREQ) na podstawie konfiguracji i formatu
+func DecodeROCOF(reader *bytes.Reader, format FormatBits) (float64, error) {
+	var dfreq float64
+
+	if format.FREQ_DFREQ == 0 { // 16-bit integer format
+		// Odczytujemy surowe bajty (2 bajty)
+		rawBytes := make([]byte, 2)
+		if _, err := reader.Read(rawBytes); err != nil {
+			return 0, fmt.Errorf("błąd odczytu DFREQ (16-bit): %v", err)
+		}
+
+		// Konwersja na wartość 16-bitową
+		rawDFREQ := int16(rawBytes[0])<<8 | int16(rawBytes[1])
+		//fmt.Printf("Odczytane bajty (16-bit): %X %X, rawDFREQ: %d\n", rawBytes[0], rawBytes[1], rawDFREQ)
+
+		// Przeskalowanie na Hz/s (x100)
+		dfreq = float64(rawDFREQ) / 100.0
+	} else { // 32-bit floating-point format
+		// Odczytujemy surowe bajty (4 bajty)
+		rawBytes := make([]byte, 4)
+		if _, err := reader.Read(rawBytes); err != nil {
+			return 0, fmt.Errorf("błąd odczytu DFREQ (floating-point): %v", err)
+		}
+
+		// Konwersja na wartość 32-bitową zmiennoprzecinkową
+		rawDFREQ := math.Float32frombits(binary.BigEndian.Uint32(rawBytes))
+		//fmt.Printf("Odczytane bajty (32-bit): %X %X %X %X, rawDFREQ: %.3f\n", rawBytes[0], rawBytes[1], rawBytes[2], rawBytes[3], rawDFREQ)
+
+		// Wartość jest już w Hz/s
+		dfreq = float64(rawDFREQ)
+	}
+
+	return dfreq, nil
+}
+
+// EncodeROCOF koduje wartość ROCOF (DFREQ) na podstawie konfiguracji i formatu.
+// Funkcja zwraca zakodowane bajty reprezentujące ROCOF.
+func EncodeROCOF(dfreq float64) ([]byte, error) {
+	var buf bytes.Buffer
+	format := CfgFrame2.Format
+
+	// Kodowanie na podstawie formatu
+	if format.FREQ_DFREQ == 0 { // 16-bit integer format
+		// Przeskalowanie wartości do formatu 16-bitowego (x100)
+		rawDFREQ := int16(dfreq * 100.0)
+
+		// Zapisz wartość jako 16-bitowy integer
+		if err := binary.Write(&buf, binary.BigEndian, rawDFREQ); err != nil {
+			return nil, fmt.Errorf("błąd zapisu DFREQ (16-bit): %v", err)
+		}
+	} else { // 32-bit floating-point format
+		// Przekształcenie wartości na 32-bitowy float
+		rawDFREQ := float32(dfreq)
+
+		// Zapisz wartość jako 32-bitowy float
+		if err := binary.Write(&buf, binary.BigEndian, rawDFREQ); err != nil {
+			return nil, fmt.Errorf("błąd zapisu DFREQ (floating-point): %v", err)
+		}
+	}
+
+	return buf.Bytes(), nil
+}
+
+// DecodeAnalogs dekoduje analogi (ANALOG) na podstawie konfiguracji i formatu
+func DecodeAnalogs(reader *bytes.Reader, format FormatBits) ([]Analog, error) {
+	// Liczba analogów
+	numAnalogs := int(CfgFrame2.NumAnalogs)
+
+	// Pobranie nazw analogów z konfiguracji (po nazwach fazorów)
+	analogNames := CfgFrame2.ChannelNames[CfgFrame2.NumPhasors : CfgFrame2.NumPhasors+uint16(numAnalogs)]
+
+	// Walidacja liczby analogów, jednostek i nazw
+	if uint16(len(CfgFrame2.AnalogUnits)) != CfgFrame2.NumAnalogs || len(analogNames) != numAnalogs {
+		return nil, fmt.Errorf(
+			"niezgodność liczby analogów, jednostek lub nazw (numAnalogs: %d, len(analogUnits): %d, len(analogNames): %d)",
+			numAnalogs, len(CfgFrame2.AnalogUnits), len(analogNames),
+		)
 	}
 
 	// Dekodowanie analogów
-	frame.Analogs = make([]float32, frame.NumAnalogs)
-	for i := 0; i < int(frame.NumAnalogs); i++ {
-		if err := binary.Read(reader, binary.BigEndian, &frame.Analogs[i]); err != nil {
-			return nil, fmt.Errorf("błąd odczytu analogów: %v", err)
+	analogs := make([]Analog, numAnalogs)
+	for i := 0; i < numAnalogs; i++ {
+		unit := CfgFrame2.AnalogUnits[i]
+		name := analogNames[i]
+		var value float64
+
+		// Dekodowanie wartości na podstawie formatu danych
+		if format.AnalogFmt == 0 {
+			// 16-bit integer
+			var rawValue int16
+			if err := binary.Read(reader, binary.BigEndian, &rawValue); err != nil {
+				return nil, fmt.Errorf("błąd odczytu 16-bitowej wartości analogowej: %v", err)
+			}
+			value = float64(rawValue) * unit.ScalingFactor
+		} else {
+			// 32-bit floating-point
+			var rawValue float32
+			if err := binary.Read(reader, binary.BigEndian, &rawValue); err != nil {
+				return nil, fmt.Errorf("błąd odczytu 32-bitowej wartości analogowej: %v", err)
+			}
+			value = float64(rawValue)
+		}
+
+		// Tworzenie struktury Analog
+		analogs[i] = Analog{
+			Name:  name,
+			Value: value,
 		}
 	}
 
-	// Dekodowanie cyfrowych słów
-	frame.Digitals = make([]DigitalWord, frame.NumDigitals)
-	for i := 0; i < int(frame.NumDigitals); i++ {
-		var word uint16
-		if err := binary.Read(reader, binary.BigEndian, &word); err != nil {
-			return nil, fmt.Errorf("błąd odczytu DigitalWord: %v", err)
-		}
-		frame.Digitals[i] = DigitalWord{Value: word}
-	}
-
-	// Dekodowanie flag statusowych
-	var status uint16
-	if err := binary.Read(reader, binary.BigEndian, &status); err != nil {
-		return nil, fmt.Errorf("błąd odczytu flag statusowych: %v", err)
-	}
-	frame.StatusFlags = decodeStatusFlags(status)
-
-	// Dekodowanie CRC
-	if err := binary.Read(reader, binary.BigEndian, &frame.CRC); err != nil {
-		return nil, fmt.Errorf("błąd odczytu CRC: %v", err)
-	}
-
-	return &frame, nil
+	return analogs, nil
 }
 
-/*
-// DataPhasor represents a phasor with real and imaginary components
-type DataPhasor struct {
-	Real      float32 // Real part of the phasor
-	Imaginary float32 // Imaginary part of the phasor
+// DecodeDigitals dekoduje dane cyfrowe na podstawie konfiguracji ramki
+func DecodeDigitals(reader *bytes.Reader) ([]Digital, error) {
+	// Liczba słów cyfrowych w konfiguracji
+	numDigitalWords := int(CfgFrame2.NumDigitals)
+	digitalNames := CfgFrame2.ChannelNames[CfgFrame2.NumPhasors+CfgFrame2.NumAnalogs:] // Nazwy cyfrowe zaczynają się po fazorach i analogach
+
+	if len(digitalNames) != numDigitalWords*16 {
+		return nil, fmt.Errorf(
+			"niezgodność liczby nazw cyfrowych (numDigitalWords: %d, len(digitalNames): %d)",
+			numDigitalWords, len(digitalNames),
+		)
+	}
+
+	// Przechowywanie zdekodowanych kanałów cyfrowych
+	digitals := []Digital{}
+
+	// Dekodowanie każdego słowa cyfrowego
+	for wordIndex := 0; wordIndex < numDigitalWords; wordIndex++ {
+		// Odczyt 16-bitowego słowa cyfrowego
+		var digitalWord uint16
+		if err := binary.Read(reader, binary.BigEndian, &digitalWord); err != nil {
+			return nil, fmt.Errorf("błąd odczytu cyfrowego słowa: %v", err)
+		}
+
+		// Dekodowanie bitów w słowie cyfrowym
+		for bitIndex := 0; bitIndex < 16; bitIndex++ {
+			bitValue := (digitalWord & (1 << bitIndex)) != 0 // Sprawdzenie, czy bit jest ustawiony
+
+			// Pobranie nazwy kanału cyfrowego
+			nameIndex := wordIndex*16 + bitIndex
+			name := digitalNames[nameIndex]
+
+			// Dodanie zdekodowanego kanału cyfrowego
+			digitals = append(digitals, Digital{
+				Name:  name,
+				Value: bitValue,
+			})
+		}
+	}
+
+	return digitals, nil
 }
-
-// C37DataFrame represents the data frame fields in C37.118
-type C37DataFrame struct {
-	STAT     uint16       // Status word, 2 bytes
-	Phasors  []DataPhasor // Array of phasors
-	FREQ     float32      // Frequency, 4 bytes
-	DFREQ    float32      // Rate of change of frequency, 4 bytes
-	Analogs  []float32    // Array of analog values
-	Digitals []uint16     // Array of digital status words
-	CHK      uint16       // CRC for integrity check, 2 bytes
-}
-
-func DecodeDataFrame(data []byte , phnmr, annmr, dgnmr int) (*C37DataFrame, error) {
-	// Wyświetlanie surowych danych w formacie hex dla diagnozy
-	fmt.Printf("Raw data (hex): % X\n", data)
-
-	// Sprawdź czy dane są odpowiedniej długości
-	expectedLength := 2 + (phnmr * 8) + 4 + 4 + (annmr * 4) + (dgnmr * 2) + 2
-	if len(data) < expectedLength {
-		return nil, fmt.Errorf("not enough data for C37DataFrame, expected at least %d bytes", expectedLength)
-	}
-
-	fields := &C37DataFrame{}
-	reader := bytes.NewReader(data)
-
-	// Decode STAT (2 bytes)
-	if err := binary.Read(reader, binary.BigEndian, &fields.STAT); err != nil {
-		return nil, fmt.Errorf("error decoding STAT: %v", err)
-	}
-	fmt.Printf("Decoded STAT: %v\n", fields.STAT)
-
-	// Decode PHASORS (8 bytes per phasor: 4 bytes real, 4 bytes imaginary)
-	fields.Phasors = make([]DataPhasor, phnmr)
-	for i := 0; i < phnmr; i++ {
-		if err := binary.Read(reader, binary.BigEndian, &fields.Phasors[i].Real); err != nil {
-			return nil, fmt.Errorf("error decoding DataPhasor Real part: %v", err)
-		}
-		if err := binary.Read(reader, binary.BigEndian, &fields.Phasors[i].Imaginary); err != nil {
-			return nil, fmt.Errorf("error decoding DataPhasor Imaginary part: %v", err)
-		}
-		fmt.Printf("Decoded DataPhasor %d: Real=%v, Imaginary=%v\n", i, fields.Phasors[i].Real, fields.Phasors[i].Imaginary)
-	}
-
-	// Decode FREQ (4 bytes)
-	if err := binary.Read(reader, binary.BigEndian, &fields.FREQ); err != nil {
-		return nil, fmt.Errorf("error decoding FREQ: %v", err)
-	}
-	fmt.Printf("Decoded FREQ: %v\n", fields.FREQ)
-
-	// Decode DFREQ (4 bytes)
-	if err := binary.Read(reader, binary.BigEndian, &fields.DFREQ); err != nil {
-		return nil, fmt.Errorf("error decoding DFREQ: %v", err)
-	}
-	fmt.Printf("Decoded DFREQ: %v\n", fields.DFREQ)
-
-	// Decode ANALOG (4 bytes per analog value)
-	fields.Analogs = make([]float32, annmr)
-	for i := 0; i < annmr; i++ {
-		if err := binary.Read(reader, binary.BigEndian, &fields.Analogs[i]); err != nil {
-			return nil, fmt.Errorf("error decoding Analog value: %v", err)
-		}
-		fmt.Printf("Decoded Analog %d: %v\n", i, fields.Analogs[i])
-	}
-
-	// Decode DIGITAL (2 bytes per digital status word)
-	fields.Digitals = make([]uint16, dgnmr)
-	for i := 0; i < dgnmr; i++ {
-		if err := binary.Read(reader, binary.BigEndian, &fields.Digitals[i]); err != nil {
-			return nil, fmt.Errorf("error decoding Digital status: %v", err)
-		}
-		fmt.Printf("Decoded Digital %d: %v\n", i, fields.Digitals[i])
-	}
-
-	// Decode Chk (2 bytes)
-	if err := binary.Read(reader, binary.BigEndian, &fields.CHK); err != nil {
-		return nil, fmt.Errorf("error decoding Chk: %v", err)
-	}
-	fmt.Printf("Decoded Chk: %v\n", fields.CHK)
-
-	return fields, nil
-}
-*/

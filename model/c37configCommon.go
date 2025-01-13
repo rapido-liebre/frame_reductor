@@ -9,6 +9,28 @@ import (
 	"strings"
 )
 
+var (
+	CfgFrame2   *C37ConfigurationFrame2
+	CfgFrame3   *C37ConfigurationFrame3
+	FramesCount uint32
+	Out         Output
+)
+
+// Protocol reprezentuje typ protokołu (TCP lub UDP)
+type Protocol string
+
+const (
+	ProtocolTCP Protocol = "TCP"
+	ProtocolUDP Protocol = "UDP"
+)
+
+// Output przechowuje informacje o wyjściu
+type Output struct {
+	Protocol Protocol // Protokół TCP lub UDP
+	Port     uint32   // Numer portu
+	Filename string   // Opcjonalna nazwa pliku wyjściowego
+}
+
 // PhasorScaleFactor reprezentuje współczynnik konwersji dla kanałów fazorów z dodatkowymi flagami.
 type PhasorScaleFactor struct {
 	Flags           map[string]bool `json:"flags"`            // Flagi z mapowaniem bitowym
@@ -45,13 +67,21 @@ type FormatBits struct {
 }
 
 // Funkcja dekodująca bity pola FORMAT na strukturę FormatBits
-func decodeFormatBits(format uint16) FormatBits {
+func DecodeFormatBits(format uint16) FormatBits {
 	return FormatBits{
 		FREQ_DFREQ: uint8((format >> 3) & 1), // Bit 3
 		AnalogFmt:  uint8((format >> 2) & 1), // Bit 2
 		PhasorFmt:  uint8((format >> 1) & 1), // Bit 1
 		PhasorType: uint8(format & 1),        // Bit 0
 	}
+}
+
+// Funkcja kodująca strukturę FormatBits do uint16
+func EncodeFormatBits(format FormatBits) uint16 {
+	return (uint16(format.FREQ_DFREQ) << 3) |
+		(uint16(format.AnalogFmt) << 2) |
+		(uint16(format.PhasorFmt) << 1) |
+		uint16(format.PhasorType)
 }
 
 // TimeBaseBits struktura reprezentująca bity pola TIME_BASE
@@ -148,6 +178,8 @@ func DecodePhasorUnits(reader *bytes.Reader, phnmr uint16) ([]PhasorUnit, error)
 		switch rawData[0] {
 		case 0: // 0000 - Napięcie
 			channelType = Voltage
+		case 1:
+			fallthrough
 		case 128: // 10000000 - Prąd
 			channelType = Current
 		default:
@@ -402,4 +434,16 @@ func DecodeFreqNominal(reader *bytes.Reader) (*FNom, error) {
 	}
 
 	return fNom, nil
+}
+
+// EncodeFNom koduje strukturę FNom na wartość uint16
+func EncodeFNom(fnom FNom) uint16 {
+	var value uint16
+	if fnom.Is50Hz {
+		value |= 1 // Ustawia bit 0 na 1, jeśli częstotliwość to 50 Hz
+	}
+	if fnom.Is60Hz {
+		value |= 0 // Nic nie ustawia, jeśli częstotliwość to 60 Hz
+	}
+	return value
 }
