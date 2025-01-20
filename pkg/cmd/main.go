@@ -17,9 +17,10 @@ func main() {
 	// Definicja flag
 	mode := flag.String("mode", "listen", "Mode of operation: listen or file")
 	port := flag.Int("port", 4716, "Port number to listen on (used only in 'listen' mode)")
-	timeout := flag.Int("time", 60, "Timeout in seconds (used only in 'listen' mode)")
+	timeout := flag.Int("time", 0, "Timeout in seconds (used only in 'listen' mode)")
 	frames := flag.Int("frames", 10, "Number of frames: 1, 2, 5, 10, 20, 25, 50")
 	outputPort := flag.String("output_port", "", "Output protocol and port in format [TCP|UDP]:<port>, e.g., UDP:7420 or TCP:7421")
+	outputFile := flag.String("output_file", "", "Path to the output file where data will be saved")
 
 	// Parsowanie flag
 	flag.Parse()
@@ -55,7 +56,7 @@ func main() {
 			fmt.Println("Invalid port in output_port. Must be a valid integer between 1 and 65535.")
 			os.Exit(1)
 		}
-		fmt.Printf("Output protocol: %s, Port: %s\n", protocol, outPort)
+		fmt.Printf("Output protocol: %s, Port: %d\n", protocol, outPort)
 		model.Out.Protocol = model.Protocol(protocol)
 		model.Out.Port = uint32(outPort)
 	}
@@ -64,7 +65,7 @@ func main() {
 	switch *mode {
 	case "listen":
 		fmt.Printf("Starting in 'listen' mode on port %d with timeout %d seconds and frames %d...\n", *port, *timeout, *frames)
-		handler.StartListening(*port, *timeout)
+		handler.StartListening(*port, *timeout, *outputFile)
 	case "file":
 		fmt.Printf("Starting in 'file' mode with frames %d...\n", *frames)
 		handler.ProcessFile()

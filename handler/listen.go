@@ -10,13 +10,11 @@ import (
 )
 
 // StartListening - funkcja dla trybu "listen"
-func StartListening(port, period int) {
-	//fmt.Printf("Listening on port %d for %d seconds...\n", port, timeout)
-	//time.Sleep(time.Duration(timeout) * time.Second) // Symulacja timeoutu
-	//fmt.Println("Timeout reached, stopping listener.")
+func StartListening(port, period int, outputFilename string) {
+	// Określenie trybu zapisu ramek do pliku
+	saveToFile := len(outputFilename) > 0
 
-	// nasłuch na wskazanym porcie UDP, domyślnie 4716
-
+	// Nasłuch na wskazanym porcie UDP, domyślnie 4716
 	// Adres lokalny na wskazanym porcie
 	addr := net.UDPAddr{
 		Port: port,
@@ -31,27 +29,35 @@ func StartListening(port, period int) {
 	}
 	defer conn.Close()
 
-	// Otwieramy plik do zapisu ramek
-	file, err := os.Create("udp_frames.txt")
-	if err != nil {
-		fmt.Println("Błąd podczas tworzenia pliku:", err)
-		return
+	var file *os.File
+	if saveToFile {
+		// Otwieramy plik do zapisu ramek
+		file, err = os.Create(outputFilename)
+		if err != nil {
+			fmt.Println("Błąd podczas tworzenia pliku:", err)
+			return
+		}
+		defer file.Close()
 	}
-	defer file.Close()
 
 	// Ustawiamy czas zakończenia nasłuchu
-	timeout := time.After(time.Duration(period) * time.Second)
-
-	fmt.Println("Nasłuchuję ramek UDP przez 300 sekund...")
+	var timeout <-chan time.Time
+	if period > 0 {
+		timeout = time.After(time.Duration(period) * time.Second)
+		fmt.Printf("Nasłuchuję ramki UDP przez %d sekund...\n", period)
+	} else {
+		fmt.Println("Nasłuchuję ramki UDP w trybie ciągłym...")
+	}
 
 loop:
 	for {
 		select {
 		case <-timeout:
-			fmt.Println("Czas nasłuchu upłynął.")
-			break loop
+			if period > 0 {
+				fmt.Println("Czas nasłuchu upłynął.")
+				break loop
+			}
 		default:
-			// Przykładowa ramka UDP (66 bajtów),
 			// Zwiększony rozmiar bufora, aby uniknąć błędów związanych z dużymi ramkami
 			frame := make([]byte, 1024)
 			// Odbieramy dane UDP
@@ -69,11 +75,13 @@ loop:
 			// Konwersja ramki do formatu hex
 			hexFrame := hex.EncodeToString(frame)
 
-			// Zapisujemy ramkę do pliku
-			_, err = file.WriteString(hexFrame + "\n")
-			if err != nil {
-				fmt.Println("Błąd podczas zapisu do pliku:", err)
-				break loop
+			if saveToFile {
+				// Zapisujemy ramkę do pliku
+				_, err = file.WriteString(hexFrame + "\n")
+				if err != nil {
+					fmt.Println("Błąd podczas zapisu do pliku:", err)
+					break loop
+				}
 			}
 			fmt.Println("Odebrana ramka hex:", hexFrame)
 
@@ -86,5 +94,9 @@ loop:
 		}
 	}
 
-	fmt.Println("Nasłuch zakończony, ramki zapisane do pliku udp_frames.txt.")
+	if saveToFile {
+		fmt.Printf("Nasłuch zakończony, ramki zapisane do pliku %s.", outputFilename)
+	} else {
+		fmt.Println("Nasłuch zakończony.")
+	}
 }
