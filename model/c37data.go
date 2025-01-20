@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"strings"
 )
 
 // C37DataFrame reprezentuje ramkę danych zdefiniowaną w standardzie C37.118
@@ -351,8 +352,8 @@ func DecodePhasors(reader *bytes.Reader, format FormatBits) ([]Phasor, error) {
 		}
 
 		phasors[i] = Phasor{
-			Name:      CfgFrame2.ChannelNames[i],            // Nazwa z konfiguracji
-			Type:      CfgFrame2.PhasorUnits[i].ChannelType, // Typ kanału (napięcie/prąd)
+			Name:      strings.TrimRight(CfgFrame2.ChannelNames[i], "\x00"), // Nazwa z konfiguracji
+			Type:      CfgFrame2.PhasorUnits[i].ChannelType,                 // Typ kanału (napięcie/prąd)
 			Magnitude: magnitude,
 			Angle:     angle,
 		}
@@ -462,8 +463,18 @@ func DecodeFrequency(reader *bytes.Reader, format FormatBits) (float64, error) {
 		// Przeskaluj wartość na mHz i dodaj do nominalnej częstotliwości
 		frequency = nominalFrequency + float64(rawFreq)/1000.0
 	} else { // 32-bit floating-point format
+		// Odczytaj surowe bajty przed dekodowaniem
+		rawBytes := make([]byte, 4) // 4 bajty dla float32
+		if _, err := reader.Read(rawBytes); err != nil {
+			return 0, fmt.Errorf("błąd odczytu surowych bajtów częstotliwości: %v", err)
+		}
+
+		// Wyświetl odczytane bajty
+		fmt.Printf("Odczytane bajty częstotliwości: % X\n", rawBytes)
+
+		// Dekoduj bajty jako float32
 		var rawFreq float32
-		if err := binary.Read(reader, binary.BigEndian, &rawFreq); err != nil {
+		if err := binary.Read(bytes.NewReader(rawBytes), binary.BigEndian, &rawFreq); err != nil {
 			return 0, fmt.Errorf("błąd odczytu częstotliwości (floating-point): %v", err)
 		}
 

@@ -218,6 +218,7 @@ func ConvertDataFrame(frame model.C37DataFrame, frameData []byte) (model.C37Data
 
 	// Write the Phasors
 	phasorData, err := model.EncodePhasors(frame.Phasors)
+	fmt.Printf("Kodowane PHASORS: %X %+v\n", phasorData, phasorData)
 	if err != nil {
 		return model.C37DataFrame{}, nil, fmt.Errorf("błąd kodowania fazorów: %v", err)
 	}
@@ -225,6 +226,7 @@ func ConvertDataFrame(frame model.C37DataFrame, frameData []byte) (model.C37Data
 		return model.C37DataFrame{}, nil, fmt.Errorf("błąd zapisu fazorów: %v", err)
 	}
 	fmt.Println("Buf after write PHASORS:", buf.Bytes())
+
 	// Write the Frequency
 	freqData, err := model.EncodeFrequency(frame.Frequency)
 	if err != nil {
@@ -233,7 +235,8 @@ func ConvertDataFrame(frame model.C37DataFrame, frameData []byte) (model.C37Data
 	if _, err := buf.Write(freqData); err != nil {
 		return model.C37DataFrame{}, nil, fmt.Errorf("błąd zapisu częstotliwości: %v", err)
 	}
-	fmt.Println("Buf after write FREQ:   ", buf.Bytes())
+	fmt.Println("Buf after write FREQ:   ", buf.Bytes(), "  freq data:  ", freqData)
+
 	// Write the ROCOF
 	dfreqData, err := model.EncodeROCOF(frame.Rocof)
 	if err != nil {

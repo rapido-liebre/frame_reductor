@@ -11,11 +11,6 @@ import (
 	"time"
 )
 
-//var (
-//	CfgFrame2 *model.C37ConfigurationFrame2
-//	CfgFrame3 *model.C37ConfigurationFrame3
-//)
-
 func main() {
 	// Definicja flag
 	port := flag.Int("port", 12345, "Port number to listen on")
@@ -50,12 +45,12 @@ func main() {
 			}
 
 			// Obsługa połączenia
-			go handleConnection(conn)
+			go handleTcpConnection(conn)
 		}
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func handleTcpConnection(conn net.Conn) {
 	defer conn.Close()
 	fmt.Printf("Połączono z klientem: %v\n", conn.RemoteAddr())
 
@@ -86,7 +81,7 @@ func handleConnection(conn net.Conn) {
 			idleTimeout.Reset(5 * time.Second)
 
 			// Wyświetlenie odebranych danych
-			fmt.Printf("Odebrano ramkę [%d bytes]: %x\n", len(frameData), frameData)
+			fmt.Printf("Odebrano ramkę [%d bytes]: %x\n[%+v]", len(frameData), frameData, frameData)
 
 			// Dekodowanie nagłówka
 			header, err := model.DecodeC37Header(frameData[:14])
@@ -138,26 +133,101 @@ func handleConnection(conn net.Conn) {
 }
 
 func readFrame(conn net.Conn) ([]byte, error) {
-	// Nagłówek ramki to co najmniej 4 bajty
+	// Nagłówek ramki ma 4 bajty
 	header := make([]byte, 4)
-	_, err := io.ReadFull(conn, header)
+	n, err := conn.Read(header)
 	if err != nil {
-		return nil, fmt.Errorf("błąd odczytu nagłówka ramki: %v", err)
+		return nil, fmt.Errorf("błąd odczytu nagłówka ramki (odczytano %d bajtów): %v", n, err)
+	}
+	if n < 4 {
+		return nil, fmt.Errorf("odebrano zbyt mało bajtów na nagłówek: %d", n)
 	}
 
 	// Długość ramki określona w bajtach 3 i 4
 	frameLength := int(binary.BigEndian.Uint16(header[2:4]))
-	if frameLength <= 0 {
-		return nil, fmt.Errorf("nieprawidłowa długość ramki: %d", frameLength)
+	if frameLength < 4 {
+		return nil, fmt.Errorf("nieprawidłowa długość ramki: %d (musi być >= 4)", frameLength)
+	}
+
+	// Przygotowanie bufora na pozostałe dane
+	remainingBytes := frameLength - 4
+	buffer := make([]byte, remainingBytes)
+	totalRead := 0
+
+	// Odczyt pozostałych danych ramki
+	for totalRead < remainingBytes {
+		n, err := conn.Read(buffer[totalRead:])
+		if err != nil {
+			return nil, fmt.Errorf("błąd odczytu danych ramki (odczytano %d bajtów): %v", totalRead, err)
+		}
+		if n == 0 {
+			break // Koniec strumienia
+		}
+		totalRead += n
+	}
+
+	if totalRead != remainingBytes {
+		return nil, fmt.Errorf("niezgodna długość ramki: oczekiwano %d bajtów, odebrano %d", remainingBytes, totalRead)
+	}
+
+	// Debugowanie: opcjonalnie loguj pełną ramkę
+	fullFrame := append(header, buffer...)
+	fmt.Printf("Odebrano ramkę [%d bytes]: %x\n", len(fullFrame), fullFrame)
+
+	// Zwracamy pełną ramkę (nagłówek + dane)
+	return fullFrame, nil
+}
+
+func readFrame2(conn net.Conn) ([]byte, error) {
+	// Nagłówek ramki ma 4 bajty
+	header := make([]byte, 4)
+	n, err := io.ReadFull(conn, header)
+	if err != nil {
+		return nil, fmt.Errorf("błąd odczytu nagłówka ramki (odczytano %d bajtów): %v", n, err)
+	}
+
+	// Długość ramki określona w bajtach 3 i 4
+	frameLength := int(binary.BigEndian.Uint16(header[2:4]))
+	if frameLength < 4 {
+		return nil, fmt.Errorf("nieprawidłowa długość ramki: %d (musi być >= 4)", frameLength)
 	}
 
 	// Odczyt pozostałych danych ramki
 	frameData := make([]byte, frameLength-4) // Odejmujemy już odczytane 4 bajty nagłówka
-	_, err = io.ReadFull(conn, frameData)
+	n, err = io.ReadFull(conn, frameData)
 	if err != nil {
-		return nil, fmt.Errorf("błąd odczytu danych ramki: %v", err)
+		return nil, fmt.Errorf("błąd odczytu danych ramki (odczytano %d bajtów): %v", n, err)
 	}
 
+	// Debugowanie: opcjonalnie loguj pełną ramkę
+	fullFrame := append(header, frameData...)
+	fmt.Printf("Odebrano ramkę [%d bytes]: %x\n", len(fullFrame), fullFrame)
+
 	// Zwracamy pełną ramkę (nagłówek + dane)
-	return append(header, frameData...), nil
+	return fullFrame, nil
 }
+
+//func readFrame(conn net.Conn) ([]byte, error) {
+//	// Nagłówek ramki to co najmniej 4 bajty
+//	header := make([]byte, 4)
+//	_, err := io.ReadFull(conn, header)
+//	if err != nil {
+//		return nil, fmt.Errorf("błąd odczytu nagłówka ramki: %v", err)
+//	}
+//
+//	// Długość ramki określona w bajtach 3 i 4
+//	frameLength := int(binary.BigEndian.Uint16(header[2:4]))
+//	if frameLength <= 0 {
+//		return nil, fmt.Errorf("nieprawidłowa długość ramki: %d", frameLength)
+//	}
+//
+//	// Odczyt pozostałych danych ramki
+//	frameData := make([]byte, frameLength-4) // Odejmujemy już odczytane 4 bajty nagłówka
+//	_, err = io.ReadFull(conn, frameData)
+//	if err != nil {
+//		return nil, fmt.Errorf("błąd odczytu danych ramki: %v", err)
+//	}
+//
+//	// Zwracamy pełną ramkę (nagłówek + dane)
+//	return append(header, frameData...), nil
+//}
