@@ -59,8 +59,8 @@ func handleUDPConnection(conn net.PacketConn) error {
 		return fmt.Errorf("błąd podczas odczytu danych UDP: %w", err)
 	}
 
-	fmt.Printf("Odebrano ramkę [%d bytes]: %x\n", len(frameData), frameData)
-	fmt.Printf("Odebrano ramkę [%d bytes]: %v\n", len(frameData), frameData)
+	//fmt.Printf("Odebrano ramkę [%d bytes]: %x\n", len(frameData), frameData)
+	//fmt.Printf("Odebrano ramkę [%d bytes]: %v\n", len(frameData), frameData)
 
 	// Dekodowanie nagłówka
 	header, err := model.DecodeC37Header(frameData[:14])
@@ -112,42 +112,40 @@ func handleUDPConnection(conn net.PacketConn) error {
 }
 
 func readUDPFrame(conn net.PacketConn) ([]byte, error) {
-	// Nagłówek ramki ma co najmniej 4 bajty
-	header := make([]byte, 4)
-	n, addr, err := conn.ReadFrom(header)
+	// Początkowy bufor o rozmiarze 1024 bajtów
+	buffer := make([]byte, 1024)
+
+	// Odczyt danych z połączenia
+	n, _, err := conn.ReadFrom(buffer)
 	if err != nil {
 		// Obsługa timeoutu
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			fmt.Println("Timeout odczytu danych UDP. Oczekiwanie na kolejne ramki...")
 			return nil, nil
 		}
-		return nil, fmt.Errorf("błąd podczas odczytu nagłówka ramki: %w", err)
+		return nil, fmt.Errorf("błąd podczas odczytu danych UDP: %w", err)
 	}
+
+	fmt.Printf("\nOdebrano dane [%d bytes]: %X\n", n, buffer[:n])
 
 	if n < 4 {
 		return nil, fmt.Errorf("odebrano zbyt mało bajtów na nagłówek: %d", n)
 	}
 
 	// Długość ramki określona w bajtach 3 i 4
-	frameLength := int(binary.BigEndian.Uint16(header[2:4]))
+	frameLength := int(binary.BigEndian.Uint16(buffer[2:4]))
 	if frameLength < 4 {
 		return nil, fmt.Errorf("nieprawidłowa długość ramki: %d", frameLength)
 	}
 
-	// Odczyt pozostałych danych ramki
-	remainingBytes := frameLength - 4
-	frameData := make([]byte, remainingBytes)
-	n, _, err = conn.ReadFrom(frameData)
-	if err != nil {
-		return nil, fmt.Errorf("błąd podczas odczytu danych ramki: %w", err)
+	if frameLength > n {
+		return nil, fmt.Errorf("długość ramki (%d) przekracza odebraną ilość danych (%d)", frameLength, n)
 	}
 
-	if n != remainingBytes {
-		return nil, fmt.Errorf("niezgodna długość ramki: oczekiwano %d bajtów, odebrano %d", remainingBytes, n)
-	}
+	// Tworzymy nowy slice o dokładnej długości i pojemności
+	fullFrame := make([]byte, frameLength)
+	copy(fullFrame, buffer[:frameLength])
 
-	// Połącz nagłówek i dane w jedną ramkę
-	fullFrame := append(header, frameData...)
-	fmt.Printf("Odebrano ramkę [%d bytes] od %v: %x\n", len(fullFrame), addr, fullFrame)
+	//fmt.Printf("Odebrano ramkę [%d bytes] od %v: %X\n", len(fullFrame), addr, fullFrame)
 	return fullFrame, nil
 }

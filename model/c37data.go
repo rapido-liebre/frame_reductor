@@ -469,9 +469,6 @@ func DecodeFrequency(reader *bytes.Reader, format FormatBits) (float64, error) {
 			return 0, fmt.Errorf("błąd odczytu surowych bajtów częstotliwości: %v", err)
 		}
 
-		// Wyświetl odczytane bajty
-		fmt.Printf("Odczytane bajty częstotliwości: % X\n", rawBytes)
-
 		// Dekoduj bajty jako float32
 		var rawFreq float32
 		if err := binary.Read(bytes.NewReader(rawBytes), binary.BigEndian, &rawFreq); err != nil {

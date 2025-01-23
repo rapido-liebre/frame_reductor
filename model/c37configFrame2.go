@@ -113,23 +113,23 @@ func DecodeConfigurationFrame2(data []byte, header C37Header) (*C37Configuration
 		return nil, fmt.Errorf("Błąd odczytu FrequencyNominal: %v", err)
 	}
 	frame2.FNom = *fNom
-	fmt.Printf("Read FreqNom: %d (bytes: %x)\n", frame2.FNom, frame2.FNom)
+	//fmt.Printf("Read FreqNom: %d (bytes: %x)\n", frame2.FNom, frame2.FNom)
 
-	remainingBytes := reader.Len()
-	fmt.Printf("Pozostałe bajty w reader: %d\n", remainingBytes)
+	//remainingBytes := reader.Len()
+	//fmt.Printf("Pozostałe bajty w reader: %d\n", remainingBytes)
 
 	if err := binary.Read(reader, binary.BigEndian, &frame2.ConfigCount); err != nil {
 		return nil, fmt.Errorf("Błąd odczytu ConfigCount: %v", err)
 	}
 	fmt.Printf("Read ConfigCount: %d (bytes: %x)\n", frame2.ConfigCount, frame2.ConfigCount)
 
-	remainingBytes = reader.Len()
-	fmt.Printf("Pozostałe bajty w reader: %d\n", remainingBytes)
+	//remainingBytes = reader.Len()
+	//fmt.Printf("Pozostałe bajty w reader: %d\n", remainingBytes)
 
 	if err := binary.Read(reader, binary.BigEndian, &frame2.DataRate); err != nil {
 		return nil, fmt.Errorf("Błąd odczytu DataRate: %v", err)
 	}
-	fmt.Printf("Read DataRate: %d (bytes: %x)\n", frame2.DataRate, frame2.DataRate)
+	//fmt.Printf("Read DataRate: %d (bytes: %x)\n", frame2.DataRate, frame2.DataRate)
 
 	if err := binary.Read(reader, binary.BigEndian, &frame2.CRC); err != nil {
 		return nil, fmt.Errorf("Błąd odczytu sumy kontrolnej CRC: %v", err)

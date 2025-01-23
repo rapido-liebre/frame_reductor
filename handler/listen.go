@@ -90,7 +90,7 @@ loop:
 				fmt.Println("Błąd dekodowania nagłówka:", err)
 				return
 			}
-			fmt.Printf("Header: %v", header)
+			fmt.Printf("Header: %v\n", header)
 		}
 	}
 
