@@ -371,7 +371,7 @@ func EncodePhasors(phasors []Phasor) ([]byte, error) {
 	// Znajdź fazor "U_SEQ+"
 	var selectedPhasor *Phasor
 	for _, phasor := range phasors {
-		if phasor.Name == "U_SEQ+" {
+		if strings.Contains(phasor.Name, "U_SEQ+") {
 			selectedPhasor = &phasor
 			break
 		}

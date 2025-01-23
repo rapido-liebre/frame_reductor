@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"frame_reductor/model"
+	"strings"
 )
 
 // ConvertConfigurationFrame modifies the configuration frame and its associated byte data.
@@ -174,7 +175,7 @@ func ConvertDataFrame(frame model.C37DataFrame, frameData []byte) (model.C37Data
 	// Usuń wszystkie fazory poza 'U_SEQ+'
 	var filteredPhasors []model.Phasor
 	for _, phasor := range frame.Phasors {
-		if phasor.Name == "U_SEQ+" {
+		if strings.Contains(phasor.Name, "U_SEQ+") {
 			filteredPhasors = append(filteredPhasors, phasor)
 		}
 	}
@@ -214,18 +215,19 @@ func ConvertDataFrame(frame model.C37DataFrame, frameData []byte) (model.C37Data
 	if err = binary.Write(&buf, binary.BigEndian, statValue); err != nil {
 		return model.C37DataFrame{}, nil, fmt.Errorf("błąd zapisu Stat: %v", err)
 	}
-	fmt.Println("Buf after write STAT:   ", buf.Bytes())
+	//fmt.Println("Buf after write STAT:   ", buf.Bytes())
 
 	// Write the Phasors
+	fmt.Println(frame.Phasors)
 	phasorData, err := model.EncodePhasors(frame.Phasors)
-	fmt.Printf("Kodowane PHASORS: %X %+v\n", phasorData, phasorData)
+	//fmt.Printf("Kodowane PHASORS: %X %+v\n", phasorData, phasorData)
 	if err != nil {
 		return model.C37DataFrame{}, nil, fmt.Errorf("błąd kodowania fazorów: %v", err)
 	}
 	if _, err := buf.Write(phasorData); err != nil {
 		return model.C37DataFrame{}, nil, fmt.Errorf("błąd zapisu fazorów: %v", err)
 	}
-	fmt.Println("Buf after write PHASORS:", buf.Bytes())
+	//fmt.Println("Buf after write PHASORS:", buf.Bytes())
 
 	// Write the Frequency
 	freqData, err := model.EncodeFrequency(frame.Frequency)
@@ -235,7 +237,7 @@ func ConvertDataFrame(frame model.C37DataFrame, frameData []byte) (model.C37Data
 	if _, err := buf.Write(freqData); err != nil {
 		return model.C37DataFrame{}, nil, fmt.Errorf("błąd zapisu częstotliwości: %v", err)
 	}
-	fmt.Println("Buf after write FREQ:   ", buf.Bytes(), "  freq data:  ", freqData)
+	//fmt.Println("Buf after write FREQ:   ", buf.Bytes(), "  freq data:  ", freqData)
 
 	// Write the ROCOF
 	dfreqData, err := model.EncodeROCOF(frame.Rocof)
@@ -245,12 +247,12 @@ func ConvertDataFrame(frame model.C37DataFrame, frameData []byte) (model.C37Data
 	if _, err := buf.Write(dfreqData); err != nil {
 		return model.C37DataFrame{}, nil, fmt.Errorf("błąd zapisu ROCOF: %v", err)
 	}
-	fmt.Println("Buf after write DFREQ:  ", buf.Bytes())
+	//fmt.Println("Buf after write DFREQ:  ", buf.Bytes())
 	// Write CHK
 	if err := binary.Write(&buf, binary.BigEndian, frame.CRC); err != nil {
 		return model.C37DataFrame{}, nil, fmt.Errorf("błąd zapisu CHK: %v", err)
 	}
-	fmt.Println("Buf after write CHK:    ", buf.Bytes())
+	//fmt.Println("Buf after write CHK:    ", buf.Bytes())
 
 	// Oblicz nową długość ramki
 	frameSize := uint32(buf.Len()) // Długość ramki to długość zapisanych danych
@@ -268,7 +270,7 @@ func ConvertDataFrame(frame model.C37DataFrame, frameData []byte) (model.C37Data
 	// Zaktualizuj bajty 3 i 4 w nowym buforze
 	updatedBuf.Bytes()[2] = byte(frameSize >> 8)   // Bajt 3
 	updatedBuf.Bytes()[3] = byte(frameSize & 0xFF) // Bajt 4
-	fmt.Println("Buf after update FSIZE: ", updatedBuf.Bytes())
+	//fmt.Println("Buf after update FSIZE: ", updatedBuf.Bytes())
 
 	// Zwróć zaktualizowaną ramkę i dane
 	return frame, updatedBuf.Bytes(), nil
