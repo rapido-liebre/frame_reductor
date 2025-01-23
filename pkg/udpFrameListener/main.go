@@ -37,7 +37,7 @@ func main() {
 			return
 		default:
 			// Odczyt ramek UDP
-			err := handleUDPConnection(conn)
+			err := handleUDPConnection(conn, *timeout)
 			if err != nil {
 				fmt.Printf("Błąd podczas obsługi połączenia UDP: %v\n", err)
 			}
@@ -45,8 +45,8 @@ func main() {
 	}
 }
 
-func handleUDPConnection(conn net.PacketConn) error {
-	conn.SetReadDeadline(time.Now().Add(20 * time.Second))
+func handleUDPConnection(conn net.PacketConn, timeout int) error {
+	conn.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
 
 	// Odczyt danych UDP
 	frameData, err := readUDPFrame(conn)
