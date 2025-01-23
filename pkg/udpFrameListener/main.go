@@ -24,7 +24,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer conn.Close()
-	fmt.Printf("Serwer nasłuchuje na porcie %d przez %d sekund...\n", *port, *timeout)
+	fmt.Printf("Serwer nasłuchuje na porcie UDP %d przez %d sekund...\n", *port, *timeout)
 
 	// Kanał timeout
 	serverTimeout := time.After(time.Duration(*timeout) * time.Second)
