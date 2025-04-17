@@ -10,7 +10,7 @@ import (
 )
 
 // ProcessFile - funkcja dla trybu "file"
-func ProcessFile() {
+func ProcessFile(frameChan chan []byte) {
 	// Ustaw katalog roboczy jako katalog główny projektu
 	workingDir, err := os.Getwd()
 	if err != nil {
@@ -58,7 +58,7 @@ func ProcessFile() {
 				return
 			}
 			fmt.Printf("Zdekodowana ramka konfiguracyjna 2: %+v\n", model.CfgFrame2)
-			ProcessConfigurationFrame(*model.CfgFrame2, frameData)
+			ProcessConfigurationFrame(*model.CfgFrame2, frameData, frameChan)
 		case model.ConfigurationFrame3:
 			// Dekodowanie ramki konfiguracyjnej 3
 			model.CfgFrame3, err = model.DecodeConfigurationFrame3(frameData[14:], *header)
@@ -79,7 +79,7 @@ func ProcessFile() {
 				return
 			}
 			//fmt.Printf("Zdekodowana ramka danych: %+v\n", dataFrame)
-			ProcessDataFrame(*dataFrame, frameData)
+			ProcessDataFrame(*dataFrame, frameData, frameChan)
 		}
 	}
 	// Wyświetlenie informacji o ramce konfiguracyjnej

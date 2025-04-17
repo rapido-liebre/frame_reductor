@@ -11,7 +11,7 @@ import (
 )
 
 // StartListening - funkcja dla trybu "listen"
-func StartListening(port, period int, outputFilename string) {
+func StartListening(port, period int, outputFilename string, frameChan chan []byte) {
 	// Określenie trybu zapisu ramek do pliku
 	saveToFile := len(outputFilename) > 0
 
@@ -98,7 +98,7 @@ loop:
 						return
 					}
 					fmt.Printf("Zdekodowana ramka konfiguracyjna 2: %+v\n", model.CfgFrame2)
-					ProcessConfigurationFrame(*model.CfgFrame2, frameData)
+					ProcessConfigurationFrame(*model.CfgFrame2, frameData, frameChan)
 				case model.ConfigurationFrame3:
 					// Dekodowanie ramki konfiguracyjnej 3
 					model.CfgFrame3, err = model.DecodeConfigurationFrame3(frameData[14:], *header)
@@ -119,7 +119,7 @@ loop:
 						return
 					}
 					//fmt.Printf("Zdekodowana ramka danych: %+v\n", dataFrame)
-					ProcessDataFrame(*dataFrame, frameData)
+					ProcessDataFrame(*dataFrame, frameData, frameChan)
 				}
 			}
 		}

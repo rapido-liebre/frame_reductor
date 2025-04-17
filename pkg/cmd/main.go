@@ -15,7 +15,8 @@ import (
 
 func main() {
 	// Definicja flag
-	mode := flag.String("mode", "listen", "Mode of operation: listen or file")
+	mode := flag.String("mode", "listen", "Mode of operation: listen (default) or file")
+	tcpMode := flag.String("tcp_mode", "client", "TCP mode: client (default) or server")
 	port := flag.Int("port", 4716, "Port number to listen on (used only in 'listen' mode)")
 	timeout := flag.Int("time", 0, "Timeout in seconds (used only in 'listen' mode)")
 	frames := flag.Int("frames", 10, "Number of frames: 1, 2, 5, 10, 20, 25, 50")
@@ -61,13 +62,36 @@ func main() {
 		model.Out.Port = uint32(outPort)
 	}
 
+	if model.Out.Protocol == model.ProtocolTCP {
+		if *tcpMode == "" || *tcpMode != "server" && *tcpMode != "client" {
+			fmt.Println("Invalid TCP mode. Use client or server.")
+			os.Exit(1)
+		}
+		model.Out.TCPMode = model.TCPMode(*tcpMode)
+	}
+
+	var frameChan chan []byte
+
+	if model.Out.Protocol == model.ProtocolTCP {
+		frameChan = make(chan []byte)
+	}
+
+	if model.Out.Protocol == model.ProtocolTCP {
+		switch model.Out.TCPMode {
+		case model.TCPServer:
+			go handler.StartTCPServer(*port, frameChan)
+		case model.TCPClient:
+			go handler.StartTCPClient(*port, frameChan)
+		}
+	}
+
 	// Obsługa trybu działania
 	switch *mode {
 	case "listen":
 		fmt.Printf("Starting in 'listen' mode on port %d with timeout %d seconds and frames %d...\n", *port, *timeout, *frames)
-		handler.StartListening(*port, *timeout, *outputFile)
+		handler.StartListening(*port, *timeout, *outputFile, frameChan)
 	case "file":
 		fmt.Printf("Starting in 'file' mode with frames %d...\n", *frames)
-		handler.ProcessFile()
+		handler.ProcessFile(frameChan)
 	}
 }

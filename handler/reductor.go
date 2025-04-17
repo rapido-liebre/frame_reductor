@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"frame_reductor/model"
 	"net"
+	"time"
 )
 
 // ProcessConfigurationFrame redukuje liczbę fazorów i wysyła zmodyfikowaną ramkę konfiguracyjną na wybrany port
-func ProcessConfigurationFrame(frame model.C37ConfigurationFrame2, frameData []byte) {
+func ProcessConfigurationFrame(frame model.C37ConfigurationFrame2, frameData []byte, frameChan chan []byte) {
 	// Wypisz dane ramki
 	fmt.Printf("Dane ramki: %+v\n", frame)
 	fmt.Printf("Ramka konfiguracyjna: %+v\n", frameData)
@@ -20,7 +21,7 @@ func ProcessConfigurationFrame(frame model.C37ConfigurationFrame2, frameData []b
 		}
 		fmt.Printf("Ramka do wysłania [%d bytes]: %v\n[%+v]", len(frameDataConverted), frameConverted, frameDataConverted)
 
-		err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted)
+		err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted, frameChan)
 		//time.Sleep(10 * time.Minute)
 		if err != nil {
 			fmt.Printf("Błąd wysyłania ramki konfiguracyjnej: %v\n", err)
@@ -33,7 +34,7 @@ func ProcessConfigurationFrame(frame model.C37ConfigurationFrame2, frameData []b
 }
 
 // ProcessDataFrame redukuje liczbę fazorów i wysyła zmodyfikowaną ramkę danych na wybrany port
-func ProcessDataFrame(frame model.C37DataFrame, frameData []byte) {
+func ProcessDataFrame(frame model.C37DataFrame, frameData []byte, frameChan chan []byte) {
 	// Oblicz interwał
 	interval := model.CfgFrame2.TimeBase.TimeMultiplier / model.FramesCount
 
@@ -51,7 +52,7 @@ func ProcessDataFrame(frame model.C37DataFrame, frameData []byte) {
 			}
 			fmt.Printf("Ramka do wysłania [%d bytes]: %v\n[%+v]\n", len(frameDataConverted), frameConverted, frameDataConverted)
 
-			err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted)
+			err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted, frameChan)
 			if err != nil {
 				fmt.Printf("Błąd wysyłania ramki danych: %v\n", err)
 			} else {
@@ -65,7 +66,7 @@ func ProcessDataFrame(frame model.C37DataFrame, frameData []byte) {
 	}
 }
 
-func sendFrame(protocol model.Protocol, port uint32, frameData []byte) error {
+func sendFrame(protocol model.Protocol, port uint32, frameData []byte, frameChan chan []byte) error {
 	address := fmt.Sprintf("localhost:%d", port) // Zakładamy wysyłanie na localhost
 
 	switch protocol {
@@ -82,18 +83,18 @@ func sendFrame(protocol model.Protocol, port uint32, frameData []byte) error {
 		}
 
 	case model.ProtocolTCP:
-		conn, err := net.Dial("tcp", address)
-		if err != nil {
-			return fmt.Errorf("błąd połączenia TCP: %v", err)
-		}
-		defer conn.Close()
-
-		n, err := conn.Write(frameData)
-		if err != nil {
-			return fmt.Errorf("błąd wysyłania danych przez TCP: %v", err)
-		}
-		if n != len(frameData) {
-			return fmt.Errorf("Nie wysłano wszystkich danych: wysłano %d z %d bajtów", n, len(frameData))
+		switch model.Out.TCPMode {
+		case model.TCPServer:
+			fmt.Printf("Wysyłam ramkę do kanału. %v\n", frameData)
+			frameChan <- frameData
+		case model.TCPClient:
+			// Niezależnie od trybu (server/client), wysyłamy do kanału
+			select {
+			case frameChan <- frameData:
+				fmt.Printf("Wysłano ramkę do kanału TCP [%d bytes]\n", len(frameData))
+			case <-time.After(1 * time.Second):
+				return fmt.Errorf("timeout: nie udało się wysłać ramki do kanału")
+			}
 		}
 
 	default:

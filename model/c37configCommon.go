@@ -24,11 +24,20 @@ const (
 	ProtocolUDP Protocol = "UDP"
 )
 
+// TCPMode reprezentuje tryb protokołu TCP (Server lub Client)
+type TCPMode string
+
+const (
+	TCPServer TCPMode = "server" // oczekuje próby połączenia od klienta TCP
+	TCPClient TCPMode = "client" // nawiązuje połączenie z serwerem TCP
+)
+
 // Output przechowuje informacje o wyjściu
 type Output struct {
 	Protocol Protocol // Protokół TCP lub UDP
 	Port     uint32   // Numer portu
 	Filename string   // Opcjonalna nazwa pliku wyjściowego
+	TCPMode  TCPMode  // Tryb wysyłania ramek TCP
 }
 
 // PhasorScaleFactor reprezentuje współczynnik konwersji dla kanałów fazorów z dodatkowymi flagami.
