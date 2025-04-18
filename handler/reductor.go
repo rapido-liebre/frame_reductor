@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"frame_reductor/model"
+	"math"
 	"net"
 	"time"
 )
@@ -37,9 +38,14 @@ func ProcessConfigurationFrame(frame model.C37ConfigurationFrame2, frameData []b
 func ProcessDataFrame(frame model.C37DataFrame, frameData []byte, frameChan chan []byte) {
 	// Oblicz interwał
 	interval := model.CfgFrame2.TimeBase.TimeMultiplier / model.FramesCount
+	intervalUs := float64(interval) / 1e6                // np. 5000 = 5 ms = 0.005s
+	fractionSec := model.DecodeFracSec(frame.FracSec, 1) // np. 0.01
+
+	// Sprawdzenie, czy fractionSec jest wielokrotnością intervalUs
+	mod := math.Mod(fractionSec.FractionOfSecond, intervalUs)
 
 	// Sprawdź, czy FracSec jest wielokrotnością interwału
-	if frame.FracSec%interval == 0 || model.FramesCount == 50 {
+	if math.Abs(mod) < 1e-9 {
 		// Wypisz dane ramki
 		fmt.Printf("Dane ramki: %+v\n", frame)
 		fmt.Printf("Ramka danych: %+v\n", frameData)
@@ -62,7 +68,7 @@ func ProcessDataFrame(frame model.C37DataFrame, frameData []byte, frameChan chan
 			fmt.Println("Protokół lub port nie są zdefiniowane. Ramka danych nie została wysłana.")
 		}
 	} else {
-		fmt.Printf("Ramka danych nie spełnia warunku wielokrotności. FrameSec:%d,  interval:%d\n", frame.FracSec, interval)
+		fmt.Printf("Ramka danych nie spełnia warunku wielokrotności. FrameSec:%d,  interval:%d,  fractionOfSec:%v, intervalUs:%v, \n", frame.FracSec, interval, fractionSec.FractionOfSecond, intervalUs)
 	}
 }
 
