@@ -62,7 +62,7 @@ func ProcessDataFrame(frame model.C37DataFrame, frameData []byte, frameChan chan
 			fmt.Println("Protokół lub port nie są zdefiniowane. Ramka danych nie została wysłana.")
 		}
 	} else {
-		fmt.Println("Ramka danych nie spełnia warunku wielokrotności. ", frame.FracSec)
+		fmt.Printf("Ramka danych nie spełnia warunku wielokrotności. FrameSec:%d,  interval:%d\n", frame.FracSec, interval)
 	}
 }
 
