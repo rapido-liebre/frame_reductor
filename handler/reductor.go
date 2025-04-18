@@ -39,7 +39,7 @@ func ProcessDataFrame(frame model.C37DataFrame, frameData []byte, frameChan chan
 	interval := model.CfgFrame2.TimeBase.TimeMultiplier / model.FramesCount
 
 	// Sprawdź, czy FracSec jest wielokrotnością interwału
-	if frame.FracSec%interval == 0 {
+	if frame.FracSec%interval == 0 || model.FramesCount == 50 {
 		// Wypisz dane ramki
 		fmt.Printf("Dane ramki: %+v\n", frame)
 		fmt.Printf("Ramka danych: %+v\n", frameData)
