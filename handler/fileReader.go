@@ -21,7 +21,7 @@ func ProcessFile(frameChan chan []byte) {
 	projectRoot := filepath.Join(workingDir, "..", "..")
 	fmt.Println("Katalog główny projektu:", projectRoot)
 
-	filePath := filepath.Join(projectRoot, "udp_frames_LMS_23.04_50.txt")
+	filePath := filepath.Join(projectRoot, "udp_frames_DBN_28.04.2025_raw.txt")
 
 	file, err := os.Open(filePath)
 	if err != nil {

@@ -37,7 +37,7 @@ func main() {
 		fmt.Println("Invalid value for 'frames'. Allowed values: 1, 2, 4, 5, 10, 20, 25, 40, 50.")
 		os.Exit(1)
 	}
-	model.FramesCount = uint32(*frames)
+	model.OutputDataRate = float64(*frames)
 
 	if *outputPort != "" {
 		parts := strings.Split(*outputPort, ":")

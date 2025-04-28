@@ -14,11 +14,11 @@ func ConvertConfigurationFrame(frame model.C37ConfigurationFrame2, frameData []b
 	frame.NumPhasors = 1
 	frame.NumAnalogs = 0
 	frame.NumDigitals = 0
-	frame.ChannelNames = []string{"U_SEQ+"}
+	frame.ChannelNames = []string{"Skl zgodna U"} //"U_SEQ+"
 	frame.PhasorUnits = []model.PhasorUnit{frame.PhasorUnits[0]}
 	frame.AnalogUnits = nil
 	frame.DigitalUnits = nil
-	frame.DataRate = int16(model.FramesCount)
+	frame.DataRate = int16(model.OutputDataRate)
 
 	// Update the frameData
 	var buf bytes.Buffer
@@ -175,7 +175,7 @@ func ConvertDataFrame(frame model.C37DataFrame, frameData []byte) (model.C37Data
 	// Usuń wszystkie fazory poza 'U_SEQ+'
 	var filteredPhasors []model.Phasor
 	for _, phasor := range frame.Phasors {
-		if strings.Contains(phasor.Name, "U_SEQ+") {
+		if strings.Contains(phasor.Name, "U_SEQ+") || strings.Contains(phasor.Name, "zgodna U") {
 			filteredPhasors = append(filteredPhasors, phasor)
 		}
 	}

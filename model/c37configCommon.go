@@ -10,10 +10,11 @@ import (
 )
 
 var (
-	CfgFrame2   *C37ConfigurationFrame2
-	CfgFrame3   *C37ConfigurationFrame3
-	FramesCount uint32
-	Out         Output
+	CfgFrame2      *C37ConfigurationFrame2
+	CfgFrame3      *C37ConfigurationFrame3
+	InputDataRate  float64
+	OutputDataRate float64
+	Out            Output
 )
 
 // Protocol reprezentuje typ protokołu (TCP lub UDP)

@@ -129,6 +129,7 @@ func DecodeConfigurationFrame2(data []byte, header C37Header) (*C37Configuration
 	if err := binary.Read(reader, binary.BigEndian, &frame2.DataRate); err != nil {
 		return nil, fmt.Errorf("Błąd odczytu DataRate: %v", err)
 	}
+	InputDataRate = float64(frame2.DataRate)
 	//fmt.Printf("Read DataRate: %d (bytes: %x)\n", frame2.DataRate, frame2.DataRate)
 
 	if err := binary.Read(reader, binary.BigEndian, &frame2.CRC); err != nil {
