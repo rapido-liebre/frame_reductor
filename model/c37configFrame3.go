@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"math"
 )
 
 // C37ConfigurationFrame3 reprezentuje ramkę konfiguracji typu 3 dla standardu C37.118.
@@ -27,13 +28,12 @@ type C37ConfigurationFrame3 struct {
 	PMULatitude  float32             `json:"pmu_latitude"`  // Szerokość geograficzna PMU (WGS84)
 	PMULongitude float32             `json:"pmu_longitude"` // Długość geograficzna PMU (WGS84)
 	PMUElevation float32             `json:"pmu_elevation"` // Wysokość PMU nad poziomem morza (WGS84)
-	ServiceClass byte                `json:"service_class"` // Klasa usługi (M lub P)
+	ServiceClass string              `json:"service_class"` // Klasa usługi (M - pomiarowa(Measurement) lub P - ochronna(Protection))
 	Window       uint32              `json:"window"`        // Długość okna pomiarowego w mikrosekundach
 	GroupDelay   uint32              `json:"group_delay"`   // Opóźnienie grupy faz w mikrosekundach
-	FNom         uint16              `json:"f_nom"`         // Kod częstotliwości nominalnej i flagi
-	DataRate     int16               `json:"data_rate"`     // Szybkość transmisji danych fazorów
+	FNom         FNom                `json:"f_nom"`         // Kod częstotliwości nominalnej i flagi
+	DataRate     int16               `json:"data_rate"`     // Szybkość transmisji danych fazorów, ilość ramek/sek
 	ConfigCount  uint16              `json:"config_count"`  // Licznik zmian konfiguracji
-	CRC          uint16              `json:"crc"`           // Suma kontrolna CRC-CCITT
 }
 
 func DecodeConfigurationFrame3(data []byte, header C37Header) (*C37ConfigurationFrame3, error) {
@@ -113,11 +113,8 @@ func DecodeConfigurationFrame3(data []byte, header C37Header) (*C37Configuration
 		return nil, fmt.Errorf("Błąd odczytu NumDigitals: %v", err)
 	}
 
-	// Oblicz całkowitą liczbę nazw
-	totalNames := int(frame3.NumPhasors) + int(frame3.NumAnalogs) // + int(frame3.NumDigitals) //TODO
-
-	// Dekodowanie nazw kanałów z przesunięciem o 2 bajty
-	channelNames, err := DecodeCHNAMWithOffsetAndLength(reader, totalNames)
+	// Dekodowanie nazw kanałów
+	channelNames, err := DecodeCHNAMForCFG3(reader, int(frame3.NumPhasors), int(frame3.NumAnalogs), int(frame3.NumDigitals))
 	if err != nil {
 		log.Printf("Błąd odczytu ChannelNames: %v", err)
 		return nil, err
@@ -140,11 +137,13 @@ func DecodeConfigurationFrame3(data []byte, header C37Header) (*C37Configuration
 	frame3.AnalogScales = analogScales
 
 	// Dekodowanie masek cyfrowych
-	digitalMasks, err := DecodeDigitalMask(reader, frame3.NumDigitals)
-	if err != nil {
-		return nil, fmt.Errorf("Błąd dekodowania DigitalMask: %v", err)
+	if frame3.NumDigitals > 0 {
+		digitalMasks, err := DecodeDigitalMasks(reader, frame3.NumDigitals)
+		if err != nil {
+			return nil, fmt.Errorf("Błąd dekodowania DigitalMask: %v", err)
+		}
+		frame3.DigitalMasks = digitalMasks
 	}
-	frame3.DigitalMasks = digitalMasks
 
 	// Pozostałe pola konfiguracyjne
 	if err := binary.Read(reader, binary.BigEndian, &frame3.PMULatitude); err != nil {
@@ -153,21 +152,77 @@ func DecodeConfigurationFrame3(data []byte, header C37Header) (*C37Configuration
 	if err := binary.Read(reader, binary.BigEndian, &frame3.PMULongitude); err != nil {
 		return nil, fmt.Errorf("Błąd odczytu PMULongitude: %v", err)
 	}
-	if err := binary.Read(reader, binary.BigEndian, &frame3.PMUElevation); err != nil {
+	var PMUElevation float32
+	if err := binary.Read(reader, binary.BigEndian, &PMUElevation); err != nil {
 		return nil, fmt.Errorf("Błąd odczytu PMUElevation: %v", err)
 	}
-	if err := binary.Read(reader, binary.BigEndian, &frame3.ServiceClass); err != nil {
+	if math.IsInf(float64(PMUElevation), 0) {
+		frame3.PMUElevation = 0.0 // brak wartości, przyjmuję wysokość 0
+	} else {
+		frame3.PMUElevation = PMUElevation
+	}
+
+	//pos, _ := reader.Seek(0, io.SeekCurrent)
+	//fmt.Printf("Przed ServiceClass: jestem na bajcie: %d\n", pos)
+	var serviceClassByte byte
+	if err := binary.Read(reader, binary.BigEndian, &serviceClassByte); err != nil {
 		return nil, fmt.Errorf("Błąd odczytu SVCClass: %v", err)
 	}
+	switch serviceClassByte {
+	case 'M', 'P':
+		frame3.ServiceClass = string(serviceClassByte)
+	default:
+		return nil, fmt.Errorf("nieznana wartość ServiceClass: %v", serviceClassByte)
+	}
+
+	//pos, _ := reader.Seek(0, io.SeekCurrent)
+	//fmt.Printf("Przed Window: offset = %d\n", pos)
+	//
+	//var window uint32
+	//binary.Read(reader, binary.BigEndian, &window)
+	//
+	//pos, _ = reader.Seek(0, io.SeekCurrent)
+	//fmt.Printf("Po Window: offset = %d, Window = %d\n", pos, window)
+	//
+	//var groupDelay uint32
+	//binary.Read(reader, binary.BigEndian, &groupDelay)
+	//
+	//pos, _ = reader.Seek(0, io.SeekCurrent)
+	//fmt.Printf("Po GroupDelay: offset = %d, GroupDelay = %d\n", pos, groupDelay)
+	//
+	//var rawFNom uint16
+	//binary.Read(reader, binary.BigEndian, &rawFNom)
+	//
+	//pos, _ = reader.Seek(0, io.SeekCurrent)
+	//fmt.Printf("Po FNom: offset = %d, rawFNom = 0x%04X\n", pos, rawFNom)
+	//
+	//var dataRate int16
+	//binary.Read(reader, binary.BigEndian, &dataRate)
+	//
+	//pos, _ = reader.Seek(0, io.SeekCurrent)
+	//fmt.Printf("Po DataRate: offset = %d, DataRate = %d\n", pos, dataRate)
+	//
+	//var configCount uint16
+	//binary.Read(reader, binary.BigEndian, &configCount)
+	//
+	//pos, _ = reader.Seek(0, io.SeekCurrent)
+	//fmt.Printf("Po ConfigCount: offset = %d, ConfigCount = %d\n", pos, configCount)
+
 	if err := binary.Read(reader, binary.BigEndian, &frame3.Window); err != nil {
 		return nil, fmt.Errorf("Błąd odczytu Window: %v", err)
 	}
 	if err := binary.Read(reader, binary.BigEndian, &frame3.GroupDelay); err != nil {
 		return nil, fmt.Errorf("Błąd odczytu GrpDly: %v", err)
 	}
-	if err := binary.Read(reader, binary.BigEndian, &frame3.FNom); err != nil {
-		return nil, fmt.Errorf("Błąd odczytu FNom: %v", err)
+	//if err := binary.Read(reader, binary.BigEndian, &frame3.FNom); err != nil {
+	//	return nil, fmt.Errorf("Błąd odczytu FNom: %v", err)
+	//}
+	fNom, err := DecodeFreqNominal(reader)
+	if err != nil {
+		return nil, fmt.Errorf("Błąd odczytu FrequencyNominal: %v", err)
 	}
+	frame3.FNom = *fNom
+
 	if err := binary.Read(reader, binary.BigEndian, &frame3.DataRate); err != nil {
 		return nil, fmt.Errorf("Błąd odczytu DataRate: %v", err)
 	}

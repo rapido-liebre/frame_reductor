@@ -21,7 +21,7 @@ func ProcessFile(frameChan chan []byte) {
 	projectRoot := filepath.Join(workingDir, "..", "..")
 	fmt.Println("Katalog główny projektu:", projectRoot)
 
-	filePath := filepath.Join(projectRoot, "udp_frames_ROG_02.01.txt")
+	filePath := filepath.Join(projectRoot, "udp_frames_LMS_23.04_50.txt")
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -34,6 +34,7 @@ func ProcessFile(frameChan chan []byte) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		fmt.Println(line)
 
 		// Konwersja linii z formatu hex na []byte
 		frameData, err := hex.DecodeString(line)
@@ -51,7 +52,7 @@ func ProcessFile(frameChan chan []byte) {
 
 		switch header.DataFrameType {
 		case model.ConfigurationFrame2:
-			// Dekodowanie ramki konfiguracyjnej 2
+			// Dekodowanie ramki konfiguracyjnej 2 (aa31)
 			model.CfgFrame2, err = model.DecodeConfigurationFrame2(frameData[14:], *header)
 			if err != nil {
 				fmt.Println("Błąd dekodowania ramki konfiguracyjnej 2:", err)
@@ -60,7 +61,7 @@ func ProcessFile(frameChan chan []byte) {
 			fmt.Printf("Zdekodowana ramka konfiguracyjna 2: %+v\n", model.CfgFrame2)
 			ProcessConfigurationFrame(*model.CfgFrame2, frameData, frameChan)
 		case model.ConfigurationFrame3:
-			// Dekodowanie ramki konfiguracyjnej 3
+			// Dekodowanie ramki konfiguracyjnej 3 (aa52)
 			model.CfgFrame3, err = model.DecodeConfigurationFrame3(frameData[14:], *header)
 			if err != nil {
 				fmt.Println("Błąd dekodowania ramki konfiguracyjnej 3:", err)

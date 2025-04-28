@@ -135,6 +135,38 @@ func DecodeCHNAMWithOffsetAndLength(reader *bytes.Reader, totalNames int) ([]str
 	return channelNames, nil
 }
 
+func DecodeCHNAMForCFG3(reader *bytes.Reader, numPhasors, numAnalogs, numDigitals int) ([]string, error) {
+	totalDigitalChannels := numDigitals * 16
+	totalNames := numPhasors + numAnalogs + totalDigitalChannels
+	channelNames := make([]string, 0, totalNames)
+
+	for i := 0; i < totalNames; i++ {
+		// Każda nazwa zaczyna się od 1 bajtu - długość nazwy
+		nameLenByte, err := reader.ReadByte()
+		if err != nil {
+			return nil, fmt.Errorf("error reading name length at index %d: %v", i, err)
+		}
+		nameLen := int(nameLenByte)
+
+		if nameLen == 0 {
+			// Zgodnie ze standardem: długość 0 oznacza brak nazwy
+			channelNames = append(channelNames, "")
+			continue
+		}
+
+		// Odczytaj nazwę o podanej długości
+		nameBytes := make([]byte, nameLen)
+		if _, err := reader.Read(nameBytes); err != nil {
+			return nil, fmt.Errorf("error reading name at index %d: %v", i, err)
+		}
+
+		// Konwertuj bajty na string (UTF-8)
+		channelNames = append(channelNames, string(nameBytes))
+	}
+
+	return channelNames, nil
+}
+
 // DecodeChannelNames - funkcja dekodująca nazwy kanałów dla Frame2
 func DecodeChannelNames(reader *bytes.Reader, phnmr, annmr, dgnmr uint16) ([]string, error) {
 	// Oblicz całkowitą liczbę kanałów
@@ -298,54 +330,67 @@ func DecodeDigitalUnits(reader *bytes.Reader, dgnmr uint16) ([]DigitalUnit, erro
 // DecodeFlags dekoduje flagi na podstawie wartości uint16, zwracając mapę opisującą ustawione flagi
 func DecodeFlags(flags uint16) map[string]bool {
 	return map[string]bool{
-		"reserved":                  (flags & 0x0001) != 0, // Bit 0: Zarezerwowane (nieużywane)
-		"upsampled_with_interpol":   (flags & 0x0002) != 0, // Bit 1: Próbkowanie w górę za pomocą interpolacji
-		"upsampled_with_extrapol":   (flags & 0x0004) != 0, // Bit 2: Próbkowanie w górę za pomocą ekstrapolacji
-		"downsampled_with_reselect": (flags & 0x0008) != 0, // Bit 3: Próbkowanie w dół z wyborem próbek
-		"downsampled_with_fir":      (flags & 0x0010) != 0, // Bit 4: Próbkowanie w dół z filtrem FIR
-		"downsampled_non_fir":       (flags & 0x0020) != 0, // Bit 5: Próbkowanie w dół bez użycia filtra FIR
-		"filtered_without_sampling": (flags & 0x0040) != 0, // Bit 6: Filtracja bez zmiany próbkowania
-		"magnitude_adjusted":        (flags & 0x0080) != 0, // Bit 7: Dopasowanie wielkości
-		"phase_adjusted_rotation":   (flags & 0x0100) != 0, // Bit 8: Dopasowanie fazy przez rotację
-		"pseudo_phasor":             (flags & 0x0400) != 0, // Bit 10: Pseudofazor
-		"modification_applied":      (flags & 0x8000) != 0, // Bit 15: Zastosowano modyfikację
+		"reserved":                   (flags & 0x0001) != 0, // Bit 0: Zarezerwowane (nieużywane)
+		"upsampled_with_interpol":    (flags & 0x0002) != 0, // Bit 1: Próbkowanie w górę za pomocą interpolacji
+		"upsampled_with_extrapol":    (flags & 0x0004) != 0, // Bit 2: Próbkowanie w górę za pomocą ekstrapolacji
+		"downsampled_with_reselect":  (flags & 0x0008) != 0, // Bit 3: Próbkowanie w dół z wyborem próbek
+		"downsampled_with_fir":       (flags & 0x0010) != 0, // Bit 4: Próbkowanie w dół z filtrem FIR
+		"downsampled_non_fir":        (flags & 0x0020) != 0, // Bit 5: Próbkowanie w dół bez użycia filtra FIR
+		"filtered_without_sampling":  (flags & 0x0040) != 0, // Bit 6: Filtracja bez zmiany próbkowania
+		"magnitude_adjusted":         (flags & 0x0080) != 0, // Bit 7: Dopasowanie wielkości
+		"phase_adjusted_calibration": (flags & 0x0100) != 0, // Bit 8: Dopasowanie fazy fazora przez kalibrację
+		"phase_adjusted_rotation":    (flags & 0x0200) != 0, // Bit 9: Dopasowanie fazy przez rotację
+		"pseudo_phasor":              (flags & 0x0400) != 0, // Bit 10: Pseudofazor
+		"modification_applied":       (flags & 0x8000) != 0, // Bit 15: Zastosowano modyfikację
 	}
 }
 
 // DecodePhasorScale dekoduje PhasorScale z danych binarnych
 func DecodePhasorScale(reader *bytes.Reader, count int) ([]PhasorScaleFactor, error) {
-	phasorScales := make([]PhasorScaleFactor, count)
+	phasorScales := make([]PhasorScaleFactor, 0, count)
 
 	for i := 0; i < count; i++ {
 		var flags uint16
 		var phasorTypeAndComponent uint8
 		var reserved uint8
-		var scaleFactor uint32
-		var angleOffset uint32
+		var scaleFactorBits uint32
+		var angleOffsetBits uint32
 
-		// Odczyt pierwszego 4-bajtowego słowa (flags + typ + komponent)
+		// Odczytaj flagi
 		if err := binary.Read(reader, binary.BigEndian, &flags); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu BitMappedFlags dla PhasorScale: %v", err)
+			return nil, fmt.Errorf("błąd odczytu flags dla PhasorScale: %v", err)
 		}
 
+		// Odczytaj typ i komponent fazora
 		if err := binary.Read(reader, binary.BigEndian, &phasorTypeAndComponent); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu Typu i Komponentu dla PhasorScale: %v", err)
+			return nil, fmt.Errorf("błąd odczytu phasorTypeAndComponent dla PhasorScale: %v", err)
 		}
 
+		// Odczytaj reserved
 		if err := binary.Read(reader, binary.BigEndian, &reserved); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu Reserved dla PhasorScale: %v", err)
+			return nil, fmt.Errorf("błąd odczytu reserved dla PhasorScale: %v", err)
 		}
 
-		// Rozkodowanie flags
+		// Odczytaj ScaleFactor
+		if err := binary.Read(reader, binary.BigEndian, &scaleFactorBits); err != nil {
+			return nil, fmt.Errorf("błąd odczytu ScaleFactor dla PhasorScale: %v", err)
+		}
+
+		// Odczytaj AngleOffset
+		if err := binary.Read(reader, binary.BigEndian, &angleOffsetBits); err != nil {
+			return nil, fmt.Errorf("błąd odczytu AngleOffset dla PhasorScale: %v", err)
+		}
+
+		// Rozkoduj Flags
 		decodedFlags := DecodeFlags(flags)
 
-		// Rozbicie phasorTypeAndComponent na typ i komponent fazora
+		// Rozkoduj phasorType i phasorComponent z bitfieldu
 		phasorType := "voltage"
-		if (phasorTypeAndComponent>>3)&0x01 == 1 {
+		if ((phasorTypeAndComponent >> 3) & 0x01) == 1 {
 			phasorType = "current"
 		}
 
-		phasorComponent := map[uint8]string{
+		phasorComponentMap := map[uint8]string{
 			0b000: "zero sequence",
 			0b001: "positive sequence",
 			0b010: "negative sequence",
@@ -354,30 +399,22 @@ func DecodePhasorScale(reader *bytes.Reader, count int) ([]PhasorScaleFactor, er
 			0b101: "phase B",
 			0b110: "phase C",
 			0b111: "reserved",
-		}[phasorTypeAndComponent&0x07]
-
-		// Odczyt drugiego 4-bajtowego słowa - Scale Factor
-		if err := binary.Read(reader, binary.BigEndian, &scaleFactor); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu ScaleFactor dla PhasorScale: %v", err)
 		}
+		phasorComponent := phasorComponentMap[phasorTypeAndComponent&0x07]
 
-		// Odczyt trzeciego 4-bajtowego słowa - Angle Offset
-		if err := binary.Read(reader, binary.BigEndian, &angleOffset); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu AngleOffset dla PhasorScale: %v", err)
-		}
+		// Konwertuj ScaleFactor i AngleOffset z IEEE 754
+		scaleFactor := math.Float32frombits(scaleFactorBits)
+		angleOffset := math.Float32frombits(angleOffsetBits)
 
-		// Konwersja ScaleFactor i AngleOffset do float32
-		scaleFactorFloat := math.Float32frombits(scaleFactor)
-		angleOffsetFloat := math.Float32frombits(angleOffset)
-
-		phasorScales[i] = PhasorScaleFactor{
+		phasorScales = append(phasorScales, PhasorScaleFactor{
 			Flags:           decodedFlags,
 			PhasorType:      phasorType,
 			PhasorComponent: phasorComponent,
-			ScaleFactor:     scaleFactorFloat,
-			AngleOffset:     angleOffsetFloat,
-		}
+			ScaleFactor:     scaleFactor,
+			AngleOffset:     angleOffset,
+		})
 	}
+
 	return phasorScales, nil
 }
 
@@ -387,35 +424,31 @@ func DecodeAnalogScale(reader *bytes.Reader, count int) ([]AnalogScaleFactor, er
 	for i := 0; i < count; i++ {
 		var scale AnalogScaleFactor
 		if err := binary.Read(reader, binary.BigEndian, &scale.MagnitudeScale); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu MagnitudeScale dla AnalogScale: %v", err)
+			return nil, fmt.Errorf("błąd odczytu MagnitudeScale dla AnalogScale: %v", err)
 		}
 		if err := binary.Read(reader, binary.BigEndian, &scale.Offset); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu Offset dla AnalogScale: %v", err)
+			return nil, fmt.Errorf("błąd odczytu Offset dla AnalogScale: %v", err)
 		}
 		analogScales[i] = scale
 	}
 	return analogScales, nil
 }
 
-// DecodeDigitalMask dekoduje maski cyfrowe z pola DIGUNIT o długości 4 bajtów.
-func DecodeDigitalMask(reader *bytes.Reader, numDigitals uint16) ([]DigitalMask, error) {
+// DecodeDigitalMasks dekoduje maski cyfrowe z pola DIGUNIT o długości 4 bajtów.
+func DecodeDigitalMasks(reader *bytes.Reader, numDigitals uint16) ([]DigitalMask, error) {
 	digitalMasks := make([]DigitalMask, numDigitals)
-
-	numDigitals = 0 //TODO temporary hardcoded
 
 	for i := 0; i < int(numDigitals); i++ {
 		var mask DigitalMask
 
 		// Pierwsze 2 bajty - maska 1
 		if err := binary.Read(reader, binary.BigEndian, &mask.Mask1); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu Mask1 dla DigitalMask: %v", err)
+			return nil, fmt.Errorf("błąd odczytu Mask1 dla DigitalMask: %v", err)
 		}
-
 		// Kolejne 2 bajty - maska 2
 		if err := binary.Read(reader, binary.BigEndian, &mask.Mask2); err != nil {
-			return nil, fmt.Errorf("Błąd odczytu Mask2 dla DigitalMask: %v", err)
+			return nil, fmt.Errorf("błąd odczytu Mask2 dla DigitalMask: %v", err)
 		}
-
 		digitalMasks[i] = mask
 	}
 
@@ -424,8 +457,9 @@ func DecodeDigitalMask(reader *bytes.Reader, numDigitals uint16) ([]DigitalMask,
 
 // FNom reprezentuje nominalną częstotliwość linii
 type FNom struct {
-	Is50Hz bool // true, jeśli częstotliwość podstawowa wynosi 50 Hz
-	Is60Hz bool // true, jeśli częstotliwość podstawowa wynosi 60 Hz
+	Is50Hz   bool // true, jeśli częstotliwość podstawowa wynosi 50 Hz
+	Is60Hz   bool // true, jeśli częstotliwość podstawowa wynosi 60 Hz
+	RawValue uint16
 }
 
 // DecodeFreqNominal dekoduje FNOM na podstawie specyfikacji
@@ -437,9 +471,11 @@ func DecodeFreqNominal(reader *bytes.Reader) (*FNom, error) {
 	}
 
 	// Dekodowanie bitów
+	bit0 := rawFNom & 0x0001
 	fNom := &FNom{
-		Is50Hz: rawFNom&0x0001 == 1, // Bit 0 ustawiony na 1 oznacza 50 Hz
-		Is60Hz: rawFNom&0x0001 == 0, // Bit 0 ustawiony na 0 oznacza 60 Hz
+		Is50Hz:   bit0 == 1,
+		Is60Hz:   bit0 == 0,
+		RawValue: rawFNom,
 	}
 
 	return fNom, nil
