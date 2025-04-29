@@ -7,7 +7,7 @@ import (
 )
 
 func StartTCPClient(port uint32, frameChan chan []byte) {
-	address := fmt.Sprintf("localhost:%d", port)
+	address := fmt.Sprintf("10.48.3.87:%d", port)
 
 	for {
 		conn, err := net.Dial("tcp", address)
