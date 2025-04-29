@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func StartTCPClient(port int, frameChan chan []byte) {
+func StartTCPClient(port uint32, frameChan chan []byte) {
 	address := fmt.Sprintf("localhost:%d", port)
 
 	for {

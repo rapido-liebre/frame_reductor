@@ -21,7 +21,8 @@ func main() {
 	timeout := flag.Int("time", 0, "Timeout in seconds (used only in 'listen' mode)")
 	frames := flag.Int("frames", 10, "Number of frames: 1, 2, 5, 10, 20, 25, 50")
 	outputPort := flag.String("output_port", "", "Output protocol and port in format [TCP|UDP]:<port>, e.g., UDP:7420 or TCP:7421")
-	outputFile := flag.String("output_file", "", "Path to the output file where data will be saved")
+	inputFile := flag.String("input_file", "", "Path to the input file from which the data will be loaded")
+	outputFile := flag.String("output_file", "", "Path to the output file where the data will be saved")
 
 	// Parsowanie flag
 	flag.Parse()
@@ -81,7 +82,7 @@ func main() {
 		case model.TCPServer:
 			go handler.StartTCPServer(*port, frameChan)
 		case model.TCPClient:
-			go handler.StartTCPClient(*port, frameChan)
+			go handler.StartTCPClient(model.Out.Port, frameChan)
 		}
 	}
 
@@ -91,7 +92,7 @@ func main() {
 		fmt.Printf("Starting in 'listen' mode on port %d with timeout %d seconds and frames %d...\n", *port, *timeout, *frames)
 		handler.StartListening(*port, *timeout, *outputFile, frameChan)
 	case "file":
-		fmt.Printf("Starting in 'file' mode with frames %d...\n", *frames)
-		handler.ProcessFile(frameChan)
+		fmt.Printf("Starting in 'file' mode with data rate %d frames/sec...\n", *frames)
+		handler.ProcessFile(frameChan, *inputFile)
 	}
 }

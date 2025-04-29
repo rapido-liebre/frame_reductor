@@ -10,7 +10,7 @@ import (
 )
 
 // ProcessFile - funkcja dla trybu "file"
-func ProcessFile(frameChan chan []byte) {
+func ProcessFile(frameChan chan []byte, inputFilename string) {
 	// Ustaw katalog roboczy jako katalog główny projektu
 	workingDir, err := os.Getwd()
 	if err != nil {
@@ -21,7 +21,7 @@ func ProcessFile(frameChan chan []byte) {
 	projectRoot := filepath.Join(workingDir, "..", "..")
 	fmt.Println("Katalog główny projektu:", projectRoot)
 
-	filePath := filepath.Join(projectRoot, "udp_frames_DBN_28.04.2025_raw.txt")
+	filePath := filepath.Join(projectRoot, inputFilename)
 
 	file, err := os.Open(filePath)
 	if err != nil {
