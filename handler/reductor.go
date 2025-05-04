@@ -21,7 +21,9 @@ func ProcessConfigurationFrame(frame model.C37ConfigurationFrame2, frameData []b
 		}
 		fmt.Printf("Ramka do wysłania [%d bytes]: %v\n[%+v]", len(frameDataConverted), frameConverted, frameDataConverted)
 
-		err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted, frameChan)
+		err = sendFrame(model.Out.Protocol, model.Out.Port, frameData, frameChan)
+		//err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted, frameChan)
+
 		//time.Sleep(10 * time.Minute)
 		if err != nil {
 			fmt.Printf("Błąd wysyłania ramki konfiguracyjnej: %v\n", err)
@@ -68,7 +70,9 @@ func ProcessDataFrame(frame model.C37DataFrame, frameData []byte, frameChan chan
 			}
 			fmt.Printf("Ramka do wysłania [%d bytes]: %v\n[%+v]\n", len(frameDataConverted), frameConverted, frameDataConverted)
 
-			err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted, frameChan)
+			err = sendFrame(model.Out.Protocol, model.Out.Port, frameData, frameChan)
+			//err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted, frameChan)
+
 			if err != nil {
 				fmt.Printf("Błąd wysyłania ramki danych: %v\n", err)
 			} else {
