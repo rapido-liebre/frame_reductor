@@ -73,7 +73,7 @@ func ProcessDataFrame(frame model.C37DataFrame, frameData []byte, frameChan chan
 			fmt.Printf("Ramka do wysłania [%d bytes]: %v\n[%+v]\n", len(frameDataConverted), frameConverted, frameDataConverted)
 			printFrameAsHex(frameData)
 
-			err = sendFrame(model.Out.Protocol, model.Out.Port, frameData, frameChan)
+			//err = sendFrame(model.Out.Protocol, model.Out.Port, frameData, frameChan)
 			//err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted, frameChan)
 
 			if err != nil {
