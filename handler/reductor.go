@@ -16,14 +16,14 @@ func ProcessConfigurationFrame(frame model.C37ConfigurationFrame2, frameData []b
 
 	// Wyślij ramkę konfiguracyjną na odpowiedni port
 	if model.Out.Protocol != "" && model.Out.Port != 0 {
-		//frameConverted, frameDataConverted, err := ConvertConfigurationFrame(frame, frameData)
-		//if err != nil {
-		//	fmt.Printf("Błąd konwersji ramki konfiguracyjnej: %v\n", err)
-		//}
-		//fmt.Printf("Ramka do wysłania [%d bytes]: %v\n[%+v]\n", len(frameDataConverted), frameConverted, frameDataConverted)
+		frameConverted, frameDataConverted, err := ConvertConfigurationFrame(frame, frameData)
+		if err != nil {
+			fmt.Printf("Błąd konwersji ramki konfiguracyjnej: %v\n", err)
+		}
+		fmt.Printf("Ramka do wysłania [%d bytes]: %v\n[%+v]\n", len(frameDataConverted), frameConverted, frameDataConverted)
 		PrintFrameAsHex(frameData)
 
-		err := sendFrame(model.Out.Protocol, model.Out.Port, frameData, frameChan)
+		err = sendFrame(model.Out.Protocol, model.Out.Port, frameData, frameChan)
 		//err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted, frameChan)
 
 		//time.Sleep(10 * time.Minute)

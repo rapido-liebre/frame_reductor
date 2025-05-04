@@ -151,9 +151,14 @@ func ConvertConfigurationFrame(frame model.C37ConfigurationFrame2, frameData []b
 	// Oblicz nową długość ramki
 	frameSize := uint32(buf.Len()) // Długość ramki to długość zapisanych danych
 
-	// Zaktualizuj bajty 3 i 4 w ramce, aby zawierały nową długość
-	frameData[2] = byte(frameSize >> 8)   // Bajt 3
-	frameData[3] = byte(frameSize & 0xFF) // Bajt 4
+	//// Aktualizacja bajtów 3 i 4 w ramce, aby zawierały nową długość
+	//frameData[2] = byte(frameSize >> 8)   // Bajt 3
+	//frameData[3] = byte(frameSize & 0xFF) // Bajt 4
+
+	// Aktualizacja bajtów 15 i 16 w ramce, aby zawierały nową liczbę bramek na sekundę
+	dataRate := uint16(frame.DataRate)
+	frameData[14] = byte(dataRate >> 8)   // Bajt 15 (MSB)
+	frameData[15] = byte(dataRate & 0xFF) // Bajt 16 (LSB)
 
 	// aktualizacja wartości długości w buforze
 	// Resetuj bufor
