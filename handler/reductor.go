@@ -16,14 +16,14 @@ func ProcessConfigurationFrame(frame model.C37ConfigurationFrame2, frameData []b
 
 	// Wyślij ramkę konfiguracyjną na odpowiedni port
 	if model.Out.Protocol != "" && model.Out.Port != 0 {
-		frameConverted, frameDataConverted, err := ConvertConfigurationFrame(frame, frameData)
-		if err != nil {
-			fmt.Printf("Błąd konwersji ramki konfiguracyjnej: %v\n", err)
-		}
-		fmt.Printf("Ramka do wysłania [%d bytes]: %v\n[%+v]\n", len(frameDataConverted), frameConverted, frameDataConverted)
-		printFrameAsHex(frameData)
+		//frameConverted, frameDataConverted, err := ConvertConfigurationFrame(frame, frameData)
+		//if err != nil {
+		//	fmt.Printf("Błąd konwersji ramki konfiguracyjnej: %v\n", err)
+		//}
+		//fmt.Printf("Ramka do wysłania [%d bytes]: %v\n[%+v]\n", len(frameDataConverted), frameConverted, frameDataConverted)
+		PrintFrameAsHex(frameData)
 
-		err = sendFrame(model.Out.Protocol, model.Out.Port, frameData, frameChan)
+		err := sendFrame(model.Out.Protocol, model.Out.Port, frameData, frameChan)
 		//err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted, frameChan)
 
 		//time.Sleep(10 * time.Minute)
@@ -71,7 +71,7 @@ func ProcessDataFrame(frame model.C37DataFrame, frameData []byte, frameChan chan
 				fmt.Printf("Błąd konwersji ramki danych: %v\n", err)
 			}
 			fmt.Printf("Ramka do wysłania [%d bytes]: %v\n[%+v]\n", len(frameDataConverted), frameConverted, frameDataConverted)
-			printFrameAsHex(frameData)
+			PrintFrameAsHex(frameData)
 
 			//err = sendFrame(model.Out.Protocol, model.Out.Port, frameData, frameChan)
 			//err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted, frameChan)
@@ -127,7 +127,7 @@ func sendFrame(protocol model.Protocol, port uint32, frameData []byte, frameChan
 	return nil
 }
 
-func printFrameAsHex(frameData []byte) {
+func PrintFrameAsHex(frameData []byte) {
 	hexStr := hex.EncodeToString(frameData)
 	fmt.Println(hexStr)
 }
