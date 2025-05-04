@@ -160,6 +160,13 @@ func ConvertConfigurationFrame(frame model.C37ConfigurationFrame2, frameData []b
 	frameData[14] = byte(dataRate >> 8)   // Bajt 15 (MSB)
 	frameData[15] = byte(dataRate & 0xFF) // Bajt 16 (LSB)
 
+	// Pomijamy ostatnie 2 bajty CRC do obliczenia
+	crc := model.CalculateCRC(frameData[:len(frameData)-2])
+
+	// Wstawiamy nową sumę CRC do ostatnich dwóch bajtów ramki
+	frameData[len(frameData)-2] = byte(crc >> 8)   // MSB
+	frameData[len(frameData)-1] = byte(crc & 0xFF) // LSB
+
 	// aktualizacja wartości długości w buforze
 	// Resetuj bufor
 	var updatedBuf bytes.Buffer
