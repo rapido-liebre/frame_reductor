@@ -269,9 +269,16 @@ func ConvertDataFrame(frame model.C37DataFrame, frameData []byte) (model.C37Data
 	// Oblicz nową długość ramki
 	frameSize := uint32(buf.Len()) // Długość ramki to długość zapisanych danych
 
-	// Zaktualizuj bajty 3 i 4 w ramce, aby zawierały nową długość
-	frameData[2] = byte(frameSize >> 8)   // Bajt 3
-	frameData[3] = byte(frameSize & 0xFF) // Bajt 4
+	//// Zaktualizuj bajty 3 i 4 w ramce, aby zawierały nową długość
+	//frameData[2] = byte(frameSize >> 8)   // Bajt 3
+	//frameData[3] = byte(frameSize & 0xFF) // Bajt 4
+
+	// Pomijamy ostatnie 2 bajty CRC do obliczenia
+	crc := model.CalculateCRC(frameData[:len(frameData)-2])
+
+	// Wstawiamy nową sumę CRC do ostatnich dwóch bajtów ramki
+	frameData[len(frameData)-2] = byte(crc >> 8)   // MSB
+	frameData[len(frameData)-1] = byte(crc & 0xFF) // LSB
 
 	// aktualizacja wartości długości w buforze
 	// Resetuj bufor

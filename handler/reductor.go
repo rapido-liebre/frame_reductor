@@ -66,14 +66,14 @@ func ProcessDataFrame(frame model.C37DataFrame, frameData []byte, frameChan chan
 
 		// Wyślij ramkę danych na odpowiedni port
 		if model.Out.Protocol != "" && model.Out.Port != 0 {
-			//frameConverted, frameDataConverted, err := ConvertDataFrame(frame, frameData)
-			//if err != nil {
-			//	fmt.Printf("Błąd konwersji ramki danych: %v\n", err)
-			//}
-			//fmt.Printf("Ramka do wysłania [%d bytes]: %v\n[%+v]\n", len(frameDataConverted), frameConverted, frameDataConverted)
+			frameConverted, frameDataConverted, err := ConvertDataFrame(frame, frameData)
+			if err != nil {
+				fmt.Printf("Błąd konwersji ramki danych: %v\n", err)
+			}
+			fmt.Printf("Ramka do wysłania [%d bytes]: %v\n[%+v]\n", len(frameDataConverted), frameConverted, frameDataConverted)
 			PrintFrameAsHex(frameData)
 
-			err := sendFrame(model.Out.Protocol, model.Out.Port, frameData, frameChan)
+			err = sendFrame(model.Out.Protocol, model.Out.Port, frameData, frameChan)
 			//err = sendFrame(model.Out.Protocol, model.Out.Port, frameDataConverted, frameChan)
 
 			if err != nil {
