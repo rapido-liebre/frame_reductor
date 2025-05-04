@@ -155,10 +155,15 @@ func ConvertConfigurationFrame(frame model.C37ConfigurationFrame2, frameData []b
 	//frameData[2] = byte(frameSize >> 8)   // Bajt 3
 	//frameData[3] = byte(frameSize & 0xFF) // Bajt 4
 
-	// Aktualizacja bajtów 15 i 16 w ramce, aby zawierały nową liczbę bramek na sekundę
+	// Aktualizacja 2 bajtów przed CRC w ramce, aby zawierały nową liczbę bramek na sekundę
+	//dataRate := uint16(frame.DataRate)
+	//frameData[14] = byte(dataRate >> 8)   // Bajt 15 (MSB)
+	//frameData[15] = byte(dataRate & 0xFF) // Bajt 16 (LSB)
 	dataRate := uint16(frame.DataRate)
-	frameData[14] = byte(dataRate >> 8)   // Bajt 15 (MSB)
-	frameData[15] = byte(dataRate & 0xFF) // Bajt 16 (LSB)
+	dataRateOffset := len(frameData) - 4 // 4 = 2 bajty DataRate + 2 bajty CRC
+
+	frameData[dataRateOffset] = byte(dataRate >> 8)     // MSB
+	frameData[dataRateOffset+1] = byte(dataRate & 0xFF) // LSB
 
 	// Pomijamy ostatnie 2 bajty CRC do obliczenia
 	crc := model.CalculateCRC(frameData[:len(frameData)-2])
