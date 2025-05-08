@@ -35,10 +35,11 @@ const (
 
 // Output przechowuje informacje o wyjściu
 type Output struct {
-	Protocol Protocol // Protokół TCP lub UDP
-	Port     uint32   // Numer portu
-	Filename string   // Opcjonalna nazwa pliku wyjściowego
-	TCPMode  TCPMode  // Tryb wysyłania ramek TCP
+	Protocol   Protocol // Protokół TCP lub UDP
+	Port       uint32   // Numer portu
+	Filename   string   // Opcjonalna nazwa pliku wyjściowego
+	TCPMode    TCPMode  // Tryb wysyłania ramek TCP
+	TargetHost string   // Docelowy zdalny host
 }
 
 // PhasorScaleFactor reprezentuje współczynnik konwersji dla kanałów fazorów z dodatkowymi flagami.

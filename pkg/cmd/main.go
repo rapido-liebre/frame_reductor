@@ -21,6 +21,7 @@ func main() {
 	timeout := flag.Int("time", 0, "Timeout in seconds (used only in 'listen' mode)")
 	frames := flag.Int("frames", 10, "Number of frames: 1, 2, 5, 10, 20, 25, 50")
 	outputPort := flag.String("output_port", "", "Output protocol and port in format [TCP|UDP]:<port>, e.g., UDP:7420 or TCP:7421")
+	targetHost := flag.String("target_host", "localhost", "Target host for TCP client mode, e.g., 192.168.1.10")
 	inputFile := flag.String("input_file", "", "Path to the input file from which the data will be loaded")
 	outputFile := flag.String("output_file", "", "Path to the output file where the data will be saved")
 
@@ -71,6 +72,8 @@ func main() {
 		model.Out.TCPMode = model.TCPMode(*tcpMode)
 	}
 
+	model.Out.TargetHost = *targetHost //TODO add validation
+
 	var frameChan chan []byte
 
 	if model.Out.Protocol == model.ProtocolTCP {
@@ -82,7 +85,7 @@ func main() {
 		case model.TCPServer:
 			go handler.StartTCPServer(*port, frameChan)
 		case model.TCPClient:
-			go handler.StartTCPClient(model.Out.Port, frameChan)
+			go handler.StartTCPClient(model.Out.Port, model.Out.TargetHost, frameChan)
 		}
 	}
 

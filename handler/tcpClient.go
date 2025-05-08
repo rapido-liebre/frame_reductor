@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-func StartTCPClient(port uint32, frameChan chan []byte) {
-	address := fmt.Sprintf("10.48.3.87:%d", port)
+func StartTCPClient(port uint32, host string, frameChan chan []byte) {
+	address := fmt.Sprintf("%s:%d", host, port)
 
 	for {
 		conn, err := net.Dial("tcp", address)
