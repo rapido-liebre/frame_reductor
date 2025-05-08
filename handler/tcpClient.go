@@ -6,11 +6,30 @@ import (
 	"time"
 )
 
-func StartTCPClient(port uint32, host string, frameChan chan []byte) {
-	address := fmt.Sprintf("%s:%d", host, port)
+func StartTCPClient(port uint32, targetHost, bindIP string, frameChan chan []byte) {
+	ifaces, _ := net.Interfaces()
+	for _, iface := range ifaces {
+		addrs, _ := iface.Addrs()
+		fmt.Println("Dostępne interfejsy:")
+		for _, addr := range addrs {
+			fmt.Printf("Interfejs %s: %v\n", iface.Name, addr)
+		}
+	}
+
+	address := fmt.Sprintf("%s:%d", targetHost, port)
+
+	dialer := net.Dialer{
+		Timeout: 5 * time.Second,
+	}
+
+	if bindIP != "" {
+		dialer.LocalAddr = &net.TCPAddr{
+			IP: net.ParseIP(bindIP),
+		}
+	}
 
 	for {
-		conn, err := net.Dial("tcp", address)
+		conn, err := dialer.Dial("tcp", address)
 		if err != nil {
 			fmt.Println("Nie udało się połączyć z serwerem TCP, próba ponownie za 3 sekundy...")
 			time.Sleep(3 * time.Second)

@@ -40,6 +40,7 @@ type Output struct {
 	Filename   string   // Opcjonalna nazwa pliku wyjściowego
 	TCPMode    TCPMode  // Tryb wysyłania ramek TCP
 	TargetHost string   // Docelowy zdalny host
+	BindIP     string   // Lokalny adres IP, przez który ma zostać nawiązane połączenie
 }
 
 // PhasorScaleFactor reprezentuje współczynnik konwersji dla kanałów fazorów z dodatkowymi flagami.
