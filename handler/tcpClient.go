@@ -7,15 +7,6 @@ import (
 )
 
 func StartTCPClient(port uint32, targetHost, bindIP string, frameChan chan []byte) {
-	ifaces, _ := net.Interfaces()
-	for _, iface := range ifaces {
-		addrs, _ := iface.Addrs()
-		fmt.Println("Dostępne interfejsy:")
-		for _, addr := range addrs {
-			fmt.Printf("Interfejs %s: %v\n", iface.Name, addr)
-		}
-	}
-
 	address := fmt.Sprintf("%s:%d", targetHost, port)
 
 	dialer := net.Dialer{

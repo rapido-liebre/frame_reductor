@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"frame_reductor/handler"
 	"frame_reductor/model"
+	"net"
 	"strconv"
 	"strings"
 
@@ -25,9 +26,22 @@ func main() {
 	bindIP := flag.String("bind", "", "Local IP address (e.g. 192.168.1.100) through which the connection is to be established")
 	inputFile := flag.String("input_file", "", "Path to the input file from which the data will be loaded")
 	outputFile := flag.String("output_file", "", "Path to the output file where the data will be saved")
+	showInterfaces := flag.Bool("show_interfaces", false, "Show interfaces")
 
 	// Parsowanie flag
 	flag.Parse()
+
+	if *showInterfaces {
+		ifaces, _ := net.Interfaces()
+		for _, iface := range ifaces {
+			addrs, _ := iface.Addrs()
+			fmt.Println("Dostępne interfejsy:")
+			for _, addr := range addrs {
+				fmt.Printf("Interfejs %s: %v\n", iface.Name, addr)
+			}
+		}
+		return
+	}
 
 	// Walidacja wartości flag
 	if *mode != "listen" && *mode != "file" {
