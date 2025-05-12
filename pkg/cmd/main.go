@@ -27,15 +27,16 @@ func main() {
 	inputFile := flag.String("input_file", "", "Path to the input file from which the data will be loaded")
 	outputFile := flag.String("output_file", "", "Path to the output file where the data will be saved")
 	showInterfaces := flag.Bool("show_interfaces", false, "Show interfaces")
+	checkTcpConnection := flag.Bool("check_tcp_connection", false, "Check TCP connection in client mode")
 
 	// Parsowanie flag
 	flag.Parse()
 
 	if *showInterfaces {
+		fmt.Println("Dostępne interfejsy:")
 		ifaces, _ := net.Interfaces()
 		for _, iface := range ifaces {
 			addrs, _ := iface.Addrs()
-			fmt.Println("Dostępne interfejsy:")
 			for _, addr := range addrs {
 				fmt.Printf("Interfejs %s: %v\n", iface.Name, addr)
 			}
@@ -87,8 +88,17 @@ func main() {
 		model.Out.TCPMode = model.TCPMode(*tcpMode)
 	}
 
-	model.Out.TargetHost = *targetHost //TODO add validation
+	model.Out.TargetHost = *targetHost
 	model.Out.BindIP = *bindIP
+
+	if *checkTcpConnection {
+		if err := model.Out.CanConnectAsTCPClient(); err != nil {
+			fmt.Printf("TCP connection as client mode cannot be established. Error: %v\n.", err.Error())
+			os.Exit(1)
+		}
+		handler.CheckTCPClientConnection(model.Out.Port, model.Out.TargetHost, model.Out.BindIP)
+		return
+	}
 
 	var frameChan chan []byte
 

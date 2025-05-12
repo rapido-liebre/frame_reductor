@@ -56,3 +56,31 @@ func sendFramesOverConnection(conn net.Conn, frameChan chan []byte) {
 		}
 	}
 }
+
+func CheckTCPClientConnection(port uint32, targetHost, bindIP string) {
+	address := fmt.Sprintf("%s:%d", targetHost, port)
+
+	dialer := net.Dialer{
+		Timeout: 5 * time.Second,
+	}
+
+	if bindIP != "" {
+		dialer.LocalAddr = &net.TCPAddr{
+			IP: net.ParseIP(bindIP),
+		}
+	}
+
+	for {
+		conn, err := dialer.Dial("tcp", address)
+		if err != nil {
+			fmt.Println("Nie udało się połączyć z serwerem TCP, próba ponownie za 3 sekundy...")
+			time.Sleep(3 * time.Second)
+			continue
+		}
+
+		fmt.Println("Połączono z serwerem TCP.")
+		conn.Close()
+		fmt.Println("Połączenie zakończone.")
+		return
+	}
+}

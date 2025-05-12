@@ -43,6 +43,19 @@ type Output struct {
 	BindIP     string   // Lokalny adres IP, przez który ma zostać nawiązane połączenie
 }
 
+func (o Output) CanConnectAsTCPClient() error {
+	if o.TCPMode != TCPClient {
+		return fmt.Errorf("TCP mode is not set to 'client'")
+	}
+	if o.TargetHost == "" {
+		return fmt.Errorf("missing value 'TargetHost'")
+	}
+	if o.BindIP == "" {
+		return fmt.Errorf("missing value 'BindIP'")
+	}
+	return nil
+}
+
 // PhasorScaleFactor reprezentuje współczynnik konwersji dla kanałów fazorów z dodatkowymi flagami.
 type PhasorScaleFactor struct {
 	Flags           map[string]bool `json:"flags"`            // Flagi z mapowaniem bitowym
