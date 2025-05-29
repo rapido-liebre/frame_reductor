@@ -29,6 +29,28 @@ type C37ConfigurationFrame2 struct {
 	CRC          uint16        `json:"crc"`           // Suma kontrolna CRC-CCITT
 }
 
+// ToUint16 konwertuje FormatBits na uint16 zgodnie z mapowaniem bitów
+func (f FormatBits) ToUint16() uint16 {
+	var result uint16
+
+	if f.PhasorType != 0 {
+		result |= 1 << 0
+	}
+	if f.PhasorFmt != 0 {
+		result |= 1 << 1
+	}
+	if f.AnalogFmt != 0 {
+		result |= 1 << 2
+	}
+	if f.FREQ_DFREQ != 0 {
+		result |= 1 << 3
+	}
+
+	// Pozostałe bity (4-15) zarezerwowane - 0
+
+	return result
+}
+
 func DecodeConfigurationFrame2(data []byte, header C37Header) (*C37ConfigurationFrame2, error) {
 	reader := bytes.NewReader(data)
 	var frame2 C37ConfigurationFrame2

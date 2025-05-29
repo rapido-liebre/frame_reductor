@@ -478,6 +478,26 @@ type FNom struct {
 	RawValue uint16
 }
 
+// ToUint16 konwertuje FNom na wartość uint16 zgodnie z bitami IEEE C37.118
+func (f FNom) ToUint16() uint16 {
+	var result uint16
+
+	// Standard IEEE C37.118:
+	// 0x0000 = 60 Hz (bit 0 = 0)
+	// 0x0001 = 50 Hz (bit 0 = 1)
+	// Reszta bitów (1-15) może być używana na dodatkowe flagi
+
+	if f.Is50Hz {
+		result |= 1 << 0
+	}
+
+	// Jeśli Is60Hz, to bit 0 = 0 (domyślnie), więc nic nie ustawiamy
+	// RawValue można traktować jako maskę dodatkowych flag, np.
+	result |= (f.RawValue & 0xFFFE) // Zachowaj dodatkowe bity poza LSB (bit 0)
+
+	return result
+}
+
 // DecodeFreqNominal dekoduje FNOM na podstawie specyfikacji
 func DecodeFreqNominal(reader *bytes.Reader) (*FNom, error) {
 	// Odczyt 2 bajtów jako uint16

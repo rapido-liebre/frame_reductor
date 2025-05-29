@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"frame_reductor/handler"
 	"frame_reductor/model"
+	"log"
 	"net"
 	"strconv"
 	"strings"
-
-	//"net"
-	"os"
 	//"time"
 )
 
@@ -18,7 +16,7 @@ func main() {
 	// Definicja flag
 	mode := flag.String("mode", "listen", "Mode of operation: listen (default) or file")
 	tcpMode := flag.String("tcp_mode", "client", "TCP mode: client (default) or server")
-	port := flag.Int("port", 4716, "Port number to listen on (used only in 'listen' mode)")
+	ports := flag.String("ports", "4716", "Comma-separated list of UDP ports to listen on, e.g., 4716,4720,5002")
 	timeout := flag.Int("time", 0, "Timeout in seconds (used only in 'listen' mode)")
 	frames := flag.Int("frames", 10, "Number of frames: 1, 2, 5, 10, 20, 25, 50")
 	outputPort := flag.String("output_port", "", "Output protocol and port in format [TCP|UDP]:<port> (e.g., UDP:7420 or TCP:7421)")
@@ -46,34 +44,29 @@ func main() {
 
 	// Walidacja wartości flag
 	if *mode != "listen" && *mode != "file" {
-		fmt.Println("Invalid mode. Use 'listen' or 'file'.")
-		os.Exit(1)
+		log.Fatalf("Invalid mode. Use 'listen' or 'file'.")
 	}
 
 	validFrames := map[int]bool{1: true, 2: true, 4: true, 5: true, 10: true, 20: true, 25: true, 40: true, 50: true}
 	if !validFrames[*frames] {
-		fmt.Println("Invalid value for 'frames'. Allowed values: 1, 2, 4, 5, 10, 20, 25, 40, 50.")
-		os.Exit(1)
+		log.Fatalf("Invalid value for 'frames'. Allowed values: 1, 2, 4, 5, 10, 20, 25, 40, 50.")
 	}
 	model.OutputDataRate = float64(*frames)
 
 	if *outputPort != "" {
 		parts := strings.Split(*outputPort, ":")
 		if len(parts) != 2 {
-			fmt.Println("Invalid output_port format. Use [TCP|UDP]:<port>.")
-			os.Exit(1)
+			log.Fatalf("Invalid output_port format. Use [TCP|UDP]:<port>.")
 		}
 
 		protocol := strings.ToUpper(parts[0])
 		if protocol != "TCP" && protocol != "UDP" {
-			fmt.Println("Invalid protocol in output_port. Use TCP or UDP.")
-			os.Exit(1)
+			log.Fatalf("Invalid protocol in output_port. Use TCP or UDP.")
 		}
 
 		outPort, err := strconv.Atoi(parts[1])
 		if err != nil || outPort < 1 || outPort > 65535 {
-			fmt.Println("Invalid port in output_port. Must be a valid integer between 1 and 65535.")
-			os.Exit(1)
+			log.Fatalf("Invalid port in output_port. Must be a valid integer between 1 and 65535.")
 		}
 		fmt.Printf("Output protocol: %s, Port: %d\n", protocol, outPort)
 		model.Out.Protocol = model.Protocol(protocol)
@@ -82,19 +75,28 @@ func main() {
 
 	if model.Out.Protocol == model.ProtocolTCP {
 		if *tcpMode == "" || *tcpMode != "server" && *tcpMode != "client" {
-			fmt.Println("Invalid TCP mode. Use client or server.")
-			os.Exit(1)
+			log.Fatalf("Invalid TCP mode. Use client or server.")
 		}
 		model.Out.TCPMode = model.TCPMode(*tcpMode)
 	}
+
+	var portList []int
+	for _, p := range strings.Split(*ports, ",") {
+		port, err := strconv.Atoi(strings.TrimSpace(p))
+		if err != nil || port < 1 || port > 65535 {
+			log.Fatalf("Nieprawidłowy port: %s", p)
+		}
+		portList = append(portList, port)
+	}
+
+	fmt.Printf("Porty UDP do nasłuchu: %v\n", portList)
 
 	model.Out.TargetHost = *targetHost
 	model.Out.BindIP = *bindIP
 
 	if *checkTcpConnection {
 		if err := model.Out.CanConnectAsTCPClient(); err != nil {
-			fmt.Printf("TCP connection as client mode cannot be established. Error: %v\n.", err.Error())
-			os.Exit(1)
+			log.Fatalf("TCP connection as client mode cannot be established. Error: %v\n.", err.Error())
 		}
 		handler.CheckTCPClientConnection(model.Out.Port, model.Out.TargetHost, model.Out.BindIP)
 		return
@@ -109,7 +111,7 @@ func main() {
 	if model.Out.Protocol == model.ProtocolTCP {
 		switch model.Out.TCPMode {
 		case model.TCPServer:
-			go handler.StartTCPServer(*port, frameChan)
+			//go handler.StartTCPServer(*ports, frameChan) //TODO
 		case model.TCPClient:
 			go handler.StartTCPClient(model.Out.Port, model.Out.TargetHost, model.Out.BindIP, frameChan)
 		}
@@ -118,8 +120,10 @@ func main() {
 	// Obsługa trybu działania
 	switch *mode {
 	case "listen":
-		fmt.Printf("Starting in 'listen' mode on port %d with timeout %d seconds and frames %d...\n", *port, *timeout, *frames)
-		handler.StartListening(*port, *timeout, *outputFile, frameChan)
+		fmt.Printf("Starting in 'listen' mode on ports %s with timeout %d seconds and frames %d...\n", *ports, *timeout, *frames)
+		for _, p := range portList {
+			go handler.StartListening(p, *timeout, *outputFile, frameChan)
+		}
 	case "file":
 		fmt.Printf("Starting in 'file' mode with data rate %d frames/sec...\n", *frames)
 		handler.ProcessFile(frameChan, *inputFile)

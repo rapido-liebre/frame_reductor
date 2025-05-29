@@ -7,7 +7,20 @@ import (
 	"frame_reductor/model"
 	"net"
 	"os"
+	"sync"
 	"time"
+)
+
+type PMUFrame struct {
+	IDCode   uint16
+	SOC      uint32
+	FracSec  uint32
+	FrameRaw []byte
+}
+
+var (
+	frameBuffer = make(map[string][]PMUFrame) // klucz = timestamp (SOC+FracSec)
+	bufferMutex sync.Mutex
 )
 
 // StartListening - funkcja dla trybu "listen"
@@ -89,6 +102,22 @@ loop:
 					fmt.Printf("Header: %v\n", header)
 				}
 
+				soc := header.Soc
+				frac := header.FracSec
+				idCode := header.IDCode
+
+				key := fmt.Sprintf("%d:%d", soc, frac)
+				newFrame := PMUFrame{
+					IDCode:   idCode,
+					SOC:      soc,
+					FracSec:  frac,
+					FrameRaw: append([]byte(nil), frameData...), // kopia
+				}
+
+				bufferMutex.Lock()
+				frameBuffer[key] = append(frameBuffer[key], newFrame)
+				bufferMutex.Unlock()
+
 				switch header.DataFrameType {
 				case model.ConfigurationFrame2:
 					// Dekodowanie ramki konfiguracyjnej 2
@@ -98,7 +127,8 @@ loop:
 						return
 					}
 					fmt.Printf("Zdekodowana ramka konfiguracyjna 2: %+v\n", model.CfgFrame2)
-					ProcessConfigurationFrame(*model.CfgFrame2, frameData, frameChan)
+					// Obsługa agregacji
+					HandleConfigFrame(model.CfgFrame2, frameData, frameChan)
 				case model.ConfigurationFrame3:
 					// Dekodowanie ramki konfiguracyjnej 3
 					model.CfgFrame3, err = model.DecodeConfigurationFrame3(frameData[14:], *header)
